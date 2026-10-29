@@ -30,8 +30,9 @@
 /* Folders: the data folder (cache/ holds the catalog's copy and the downloads), and where the console keeps
  * apps (on the PS5 /user and /data/homebrew). */
 void store_init(const char *data_folder, const char *registered, const char *homebrew);
-/* Fetches the catalog (when `catalog`), looks for the apps and asks GitHub for their releases, on a thread of
- * its own; a refresh asked for while one runs is done after it. */
+/* With `catalog`: fetches the catalog, looks for its apps and asks GitHub for their releases; without: only looks
+ * for the apps again (after an install). On a thread of its own; a refresh asked for while one runs is done after
+ * it. */
 void store_refresh(bool catalog);
 
 void store_lock(void);

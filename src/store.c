@@ -367,7 +367,10 @@ void store_init(const char *data, const char *registered_folder, const char *hom
 void store_refresh(bool fetch_catalog_too)
 {
     store_lock();
-    want_look = want_github = true;
+    /* After an install only where the apps are is looked at again: GitHub is asked once a refresh, an app at a
+     * time, of the 60 requests an hour it allows an address. */
+    want_look = true;
+    want_github = want_github || fetch_catalog_too;
     want_catalog = want_catalog || fetch_catalog_too || catalog_state == CATALOG_NONE ||
                    catalog_state == CATALOG_FAILED;
     if (want_catalog)

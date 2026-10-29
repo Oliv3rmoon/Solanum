@@ -1,0 +1,71 @@
+# Update check and self-update
+
+Solanum's copy of Nightshade's kit (Oliv3rmoon/Nightshade, `headless/update_check` at 5270829), which is
+the PS5 Native App Boilerplate's with Nightshade's additions below. Solanum compiles it into the app
+through `src/kit_*.c` and uses it for the store's installs (`src/store.h`); its install helper and launch
+payload are Nightshade's too, in `helper/`. What Solanum changed:
+
+- `github_release_asset_check` takes the catalog's file name pattern (`{version}` is the tag without a
+  leading `v`: `Nightshade-v{version}.zip`) and the catalog's checksum file name (`SHA256SUMS` when none
+  is given), and its reading of releases/latest is apart from its requests
+  (`github_release_asset_read`, `github_release_asset_name`), so the host test reads the apps' real
+  answers. `github_release_asset` also carries the file's name, the release's `published_at` and its
+  notes (laid out by `github_release_notes`), for the store's pages. The rules are Nightshade's: the
+  newest release that is neither a draft nor a pre-release, the file uploaded, its SHA-256 from the
+  checksum file or else from GitHub's digest of it, both agreeing when both are there, and with neither
+  nothing is offered.
+- `self_update_ps5.c` is unchanged; `src/kit_console.c` names the helper and `param.json` where
+  Solanum's folder is (`store_app_file`), since `/app0` is only there in the sandbox.
+
+The rest of this file is Nightshade's.
+
+These files are the PS5 Native App Boilerplate's (`examples/update-check` and
+`examples/self-update`, boilerplate commit 2966cac), copied unchanged except
+for one thing: `self_update_ps5.c` takes the paths of the helper, of the app's
+`param.json` and of the sequence file from `SELF_UPDATE_HELPER_PATH`,
+`SELF_UPDATE_PARAM_PATH` and `SELF_UPDATE_SEQUENCE_PATH` when they are defined.
+ProsperoEden defines them (`headless/CMakeLists.txt`, `eden_paths.h`,
+`headless/update_notice.cpp`) because its folder is not `/app0` once it runs
+with filesystem access.
+
+`eden_paths.h` is ProsperoEden's own. The helper the app sends to the
+console's payload loader is in `headless/self_update_helper` (the boilerplate's
+`examples/self-update-helper`). Three changes there: its Makefile's source
+folders; `swap_entries` in `updater.cpp`, which moves aside only the entries
+the release replaces (the boilerplate's helper replaces the whole folder;
+ProsperoEden's folder can hold the player's own files, `language.txt` or the
+`assets/` folder of earlier versions with keys, firmware and games, which an
+update must keep); and `mounted_source`, which takes the installed folder from
+ShadowMountPlus's `/user/app/<TITLEID>/mount.lnk` (and refuses an image
+install, `mount_img.lnk`) before scanning the usual folders.
+
+In the kit itself, `self_update_check` also copies the catalog entry's
+`release_notes` and `release_notes_truncated` into the offer (`notes`,
+`notes_truncated`), for the update dialog's What's new view.
+
+`github_release.h` and `github_release.c` are ProsperoEden's own: a build that
+names a GitHub repository (`EDEN_UPDATE_REPOSITORY`) asks that repository's
+newest release instead of the catalog and fills the same offer, so the
+download, the helper and the dialog are the kit's, unchanged. Its trust is
+TLS and the release's own `SHA256SUMS`, not the catalog's signature (see the
+header). For it, `update_check.c` has one more reader,
+`update_check_json_array_next` (an array's elements of any type, read once),
+`self_update_ps5.c` has `self_update_check_self_from`, which is
+`self_update_check_self` when no repository is named, and its `console_fetch`
+tells an answer too long for its buffer (`SELF_UPDATE_FETCH_TOO_LARGE`) from a
+failed transfer. The host test is `headless/update_check_check.cpp`
+(`tools/check-update-check.py`).
+
+For Nightshade's Apps (`headless/apps.h`), which install and update other apps from their own
+GitHub releases, the kit has three more things. `github_release_asset_check` finds a release's
+file by its name (`PPSA99003.zip`), whatever the tag, with its SHA-256 from the release's
+`SHA256SUMS` or else from GitHub's digest of the file, refusing it with neither or when the two
+differ; it asks `releases/latest` the way the app's own check does (`fetch_latest`, taken out of
+`github_release_check` as it was), but follows a renamed repository's redirect only to the same
+owner (`GITHUB_RELEASE_OWNER_CHANGED` otherwise). `self_update.c` sends an offer with `beside` set as an
+`install` request (`self_update_protocol.h`), goes on to the helper's go-ahead by itself once it
+is staged and ends in `SELF_UPDATE_INSTALLED`; an offer without it is the kit's update, as
+before. And `self_update_ps5.c` sends any payload from the app's folder
+(`self_update_open_payload`), the launch payload as well as the helper, with a shorter wait for its
+answer when asked (`self_update_channel_timeout`), and `console_download` keeps the address it
+follows per call instead of in one static buffer, since downloads can now run at once.

@@ -2,18 +2,21 @@
 
 ## 0.1.0
 
-The first Dulcamara, a Nightshade app: RPG Maker 2000 and 2003 games on the PS5, on EasyRPG Player.
+The first Solanum, a Nightshade app: a store for open-source PS5 homebrew.
 
-- **EasyRPG Player inside the app.** Its libretro core (EasyRPG/Player at `096c004`, liblcf at `6854310`) is
-  built for the PS5 into the app, with the text encodings of Japanese, Korean, Chinese, Cyrillic and Western
-  games through iconv.
-- **The library.** Games in `/data/dulcamara/games`: a folder holding `RPG_RT.ldb` and `RPG_RT.lmt`, one
-  folder down, or a `.zip` / `.easyrpg`. Titles from `RPG_RT.ini`, covers from each game's title screen, sorted by
-  title or the last played.
-- **Playing.** Cross confirms and Circle cancels; every button can be mapped. R2 fast-forwards (x2 to x8), the
-  touchpad opens the menu (resume, fast-forward, back to the title screen, settings, quit).
-- **The picture.** Mandrake's shaders (CRT Royale and the rest) on EasyRPG's picture, sharp or smooth
-  scaling, whole-number scaling, 4:3 or 16:9, Scale2x and xBR.
-- **Nightshade's look,** its own icon and home-screen pictures, and updates from
-  [Oliv3rmoon/Dulcamara](https://github.com/Oliv3rmoon/Dulcamara/releases).
-- Built on the frontend of Mandrake (formerly Nightshade Station) 1.6.0, without its PS1 parts.
+- **The catalog.** The apps of [Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog),
+  by category with the Nightshade family first, and a search. An entry the catalog lists badly is left out, the
+  rest are shown; a copy of the catalog is kept for starts without a network.
+- **Install, update, open.** Nightshade's Settings > Apps for every app of the catalog: the newest release from
+  the app's own repository (no drafts or pre-releases), its ZIP checked against the release's checksum file as it
+  arrives and again by the install helper before anything is unpacked, the app put beside Solanum in
+  `/data/homebrew/<title ID>` or over its own files, and opened by the launch payload once Solanum closes.
+- **Downloads that go on where they stopped,** with an HTTP range; a copy that doesn't match is never resumed.
+- **Updates** lists the installed apps with a newer release, with their changelogs; **Installed** says where each
+  app lives and how big it is; each app has a page with its license, an attested badge, its newest version and
+  date, and the release's notes.
+- **Tips** from the catalog on the loading screens, and its hidden lines behind two easter eggs.
+- **Nightshade's look,** its own icon and home-screen pictures, and its own updates from
+  [Oliv3rmoon/Solanum](https://github.com/Oliv3rmoon/Solanum/releases).
+- Built on Dulcamara 0.1.0's frontend (Mandrake's), with Nightshade's self-update kit, install helper and launch
+  payload.

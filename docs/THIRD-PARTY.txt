@@ -1,49 +1,42 @@
-Dulcamara, a Nightshade app - RPG Maker 2000 / 2003 games on the PS5
+Solanum, a Nightshade app - a store for open-source PS5 homebrew
 Copyright (C) 2026 Oliv3rmoon, and the authors of what it is built from. GNU General Public License v3 or later
-(LICENSE-Dulcamara.txt).
-Source code: https://github.com/Oliv3rmoon/Dulcamara (the release's tag holds the exact source, with
-every component below as a submodule, in third_party/, or pinned by its build script).
+(LICENSE-Solanum.txt).
+Source code: https://github.com/Oliv3rmoon/Solanum (the release's tag holds the exact source, with every
+component below in kit/, helper/, third_party/, or pinned by its build script).
 
-Dulcamara is built on Mandrake (formerly Nightshade Station, https://github.com/Oliv3rmoon/Mandrake), which is
-darkxex's SwanStationPS5 (https://github.com/darkxex/SwanStationPS5, GPL-3.0-or-later) on BlackBearReloaded's
-ps5-native-app-boilerplate (GPL-3.0-or-later): its platform layer, Vulkan screen, shaders and update check.
+Solanum is built on Dulcamara (https://github.com/Oliv3rmoon/Dulcamara), whose frontend is Mandrake's (formerly
+Nightshade Station, https://github.com/Oliv3rmoon/Mandrake), which is darkxex's SwanStationPS5
+(https://github.com/darkxex/SwanStationPS5, GPL-3.0-or-later) on BlackBearReloaded's ps5-native-app-boilerplate
+(GPL-3.0-or-later): its platform layer, Vulkan screen and update check. Its installs are Nightshade's Settings > Apps
+(https://github.com/Oliv3rmoon/Nightshade, GPL-3.0-or-later).
 
 Built into eboot.bin:
 
-EasyRPG Player (the libretro core that runs the games)
-  GNU GPL v3 or later - LICENSE-EasyRPG-Player.txt, AUTHORS-EasyRPG-Player.md
-  https://github.com/EasyRPG/Player - by the EasyRPG team (https://easyrpg.org)
-  With it: FMMidi by yuno (Yoshio Uno), BSD-3-Clause; dr_wav by David Reid, public domain or MIT-0; its built-in
-  fonts Shinonome (public domain), Baekmuk (Baekmuk License), ttyp0 (ttyp0 license) and WenQuanYi (GPL-2.0-or-later
-  with font exception); the EasyRPG logos, CC-BY-SA 4.0; libretro-common (rthreads), MIT-style
-  (https://github.com/libretro/libretro-common).
-
-liblcf (RPG Maker 2000 / 2003 file formats)
-  MIT License - LICENSE-liblcf.txt - https://github.com/EasyRPG/liblcf
-  With Dulcamara's patch for text encodings through iconv (tools/patches/liblcf-iconv.patch, MIT).
-
-inih (INI reader) - BSD-3-Clause - LICENSE-inih.txt - https://github.com/benhoyt/inih
-pixman (pixel manipulation) 0.46.4 - MIT License - LICENSE-pixman.txt - https://pixman.org
-
+The self-update kit (kit/): BlackBearReloaded's ps5-native-app-boilerplate (GPL-3.0-or-later), with Nightshade's
+  additions (GPL-3.0-or-later)
 From PacBrew (https://github.com/ps5-payload-dev/pacbrew-repo), each under its own licence:
-  fmt (MIT), libpng (libpng licence), zlib (zlib licence), FreeType (FreeType licence), HarfBuzz (MIT),
-  libogg and libvorbis (BSD-3-Clause), mpg123 (LGPL-2.1), libsndfile (LGPL-2.1-or-later), FLAC (BSD-3-Clause),
-  Opus (BSD-3-Clause), LAME (LGPL-2.0-or-later), bzip2 (bzip2 licence), libsamplerate (BSD-2-Clause),
-  GNU libiconv (LGPL-2.1-or-later), SDL 2 (zlib licence), libcurl (curl licence), OpenSSL (Apache-2.0),
-  zstd (BSD-3-Clause), libpsl (MIT).
-  The LGPL libraries are linked statically into this GPL-3.0 program; its whole source is published, so they can
-  be replaced and the program relinked.
-
+  SDL 2 (zlib licence), libcurl (curl licence), OpenSSL (Apache-2.0), zlib (zlib licence),
+  zstd (BSD-3-Clause), libpsl (MIT; its Public Suffix List data MPL-2.0).
 RADV, Mesa's Vulkan driver for AMD GPUs (PS5 port by Mihawk-99) - MIT License - https://gitlab.freedesktop.org/mesa/mesa
 Frame interpolation (PS5SX2 by Swordpdf, AMD FidelityFX SDK) - GPL-3.0-or-later / MIT
-The shaders (CRT Royale, CRT Lottes, CRT Pi, Newpixie, Hyllian NTSC, Mattias, NTSC, LCD3x, zfast LCD,
-  SameBoy's Game Boy LCD, FSR 1) - each under its own licence: THIRD_PARTY_NOTICES.md in the source
+The shaders the Vulkan screen carries (CRT Royale, CRT Lottes, CRT Pi, Newpixie, Hyllian NTSC, Mattias, NTSC,
+  LCD3x, zfast LCD, SameBoy's Game Boy LCD, FSR 1) - each under its own licence: THIRD_PARTY_NOTICES.md in the
+  source
 Fonts in assets/fonts - SIL Open Font License 1.1 (notices beside them): Inter, Noto Sans JP (a subset),
   IBM Plex Mono; Tabler Icons - MIT License
 dlmalloc (Doug Lea) - public domain (CC0)
-miniz - MIT License - https://github.com/richgel999/miniz
+miniz - MIT License - LICENSE-miniz.txt - https://github.com/richgel999/miniz
 stb_image, stb_truetype (Sean Barrett) - public domain / MIT
+
+Beside eboot.bin:
+
+self-updater.elf, the install helper: the boilerplate's self-update helper (GPL-3.0-or-later) with Nightshade's
+  "install" (GPL-3.0-or-later); miniz (MIT) inside it
+app-launch.elf, the launch payload: Nightshade's (GPL-3.0-or-later), based on the Game Forwarder's launch payload
+  of Mihawk's PS5 RetroArch (https://github.com/mihawk-99/PS5_RetroArch, GPL-3.0-or-later)
 Lapy helper - MIT License - Lapy-MIT.txt
 The selection music (sce_sys/snd0.at9, "Night Drive") - BlackBearReloaded, GPL-3.0-or-later
 
-No game, RTP, BIOS, key or other copyrighted game data is included or downloaded: players copy their own games.
+The apps Solanum installs are not part of it: each is its authors', under the license the catalog
+(https://github.com/Oliv3rmoon/Solanum-Catalog) names for it. No game, key or other copyrighted game data is
+included or downloaded.

@@ -1,19 +1,19 @@
 name: Bug report
-description: Something in Dulcamara doesn't work as it should
+description: Something in Solanum doesn't work as it should
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting! One problem per report, please.
-        **Never attach or link games, the RTP or keys.** Reports that do are closed.
+        Thanks for reporting! One problem per report, please. A problem with an app Solanum installed
+        belongs in that app's own repository; a problem installing, updating or opening it belongs here.
 
   - type: textarea
     id: what
     attributes:
       label: What happened?
       description: What you saw, and what you expected instead.
-      placeholder: When I talk to an NPC in Toy Story 2, a gray box covers the screen instead of the text.
+      placeholder: Updating Physalis stopped at "Unpacking" and said the helper stopped.
     validations:
       required: true
 
@@ -21,36 +21,33 @@ body:
     id: steps
     attributes:
       label: How to make it happen
-      description: The steps from starting Dulcamara. Does it happen every time?
+      description: The steps from starting Solanum. Does it happen every time?
       placeholder: |
-        1. Start Toy Story 2
-        2. Walk up to Mr. Potato Head and press X
-        3. A gray box appears (every time)
+        1. Start Solanum, go to Updates
+        2. Choose Physalis and press X
+        3. It stops at "Unpacking" (every time)
     validations:
       required: true
 
   - type: input
-    id: game
+    id: app
     attributes:
-      label: Game
-      description: "Only if it's about a game. Its title, and RPG Maker 2000 or 2003 (under its title in the library)."
-      placeholder: My Game (RPG Maker 2000)
+      label: App
+      description: "Only if it's about one of the catalog's apps: its name and the version Solanum offered."
+      placeholder: Physalis 01.002.001
 
   - type: dropdown
     id: kind
     attributes:
       label: What kind of problem?
       options:
-        - A game looks wrong (graphics)
-        - A game sounds wrong
-        - A game crashes, freezes or won't start
-        - Dulcamara crashes or closes
+        - The catalog doesn't load
+        - An app's release isn't found or can't be installed
+        - Installing or updating fails
+        - Opening an app fails
+        - Solanum crashes or closes
         - The PS5 crashes or freezes
-        - Storage / "can't open /data/Dulcamara"
-        - Controls or button mapping
-        - Menus, shelf or settings
-        - Covers, cheats or memory cards
-        - RetroAchievements
+        - Menus, search or settings
         - Other
     validations:
       required: true
@@ -58,9 +55,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: Dulcamara version
-      description: Settings → About → Version
-      placeholder: 1.2.0
+      label: Solanum version
+      description: The About tab's first line
+      placeholder: 0.1.0
     validations:
       required: true
 
@@ -74,29 +71,22 @@ body:
       required: true
 
   - type: textarea
-    id: settings
-    attributes:
-      label: Settings that might matter
-      description: Anything you changed, especially the shader, upscaling and fast-forward. Does it still happen with the default settings?
-      placeholder: CRT Royale on. With the shader off it doesn't happen.
-
-  - type: textarea
     id: log
     attributes:
-      label: Log
+      label: Logs
       description: |
-        Attach `/data/dulcamara/logs/dulcamara.log`. Copy it with FTP **right after** the problem,
-        before starting Dulcamara again (each start replaces it). After a crash it ends with a
-        `crash:` section; that's the most useful part.
-      placeholder: Drag the Dulcamara.log file here.
+        Attach `/data/solanum/logs/solanum.log`, and for an install `updater.log` (for Open, `app-launch.log`).
+        Copy them with FTP **right after** the problem, before starting Solanum again (each start replaces
+        solanum.log). After a crash it ends with a `crash:` section; that's the most useful part.
+      placeholder: Drag the log files here.
     validations:
       required: true
 
   - type: textarea
     id: extra
     attributes:
-      label: Screenshot or video
-      description: A photo of the screen helps a lot for graphics problems.
+      label: Screenshot
+      description: A photo of the screen helps.
 
   - type: checkboxes
     id: checks
@@ -104,6 +94,4 @@ body:
       label: Before sending
       options:
         - label: I searched the existing issues and this isn't one of them.
-          required: true
-        - label: My game is my own dump, and I'm not sharing games, the RTP or keys.
           required: true

@@ -4,8 +4,10 @@
 
 | Project | Role |
 | --- | --- |
-| [EasyRPG Player](https://github.com/EasyRPG/Player) and [liblcf](https://github.com/EasyRPG/liblcf), by the [EasyRPG](https://easyrpg.org) team | The core that runs the RPG Maker 2000 / 2003 games, and their file formats |
-| [Oliv3rmoon/Mandrake](https://github.com/Oliv3rmoon/Mandrake), Mandrake (formerly Nightshade Station) | The frontend this app is built from |
+| [Oliv3rmoon/Nightshade](https://github.com/Oliv3rmoon/Nightshade) | Settings > Apps: the self-update kit's GitHub releases and install offer (`kit/`), the install helper's "install" (`helper/self_update_helper`) and the launch payload (`helper/app_launch`), at 5270829 |
+| [Mihawk's PS5 RetroArch](https://github.com/mihawk-99/PS5_RetroArch) (GPL-3.0-or-later) | The Game Forwarder's launch payload the launch payload is based on: the wait for the calling app to close and the two launch calls |
+| [Oliv3rmoon/Dulcamara](https://github.com/Oliv3rmoon/Dulcamara) | The frontend this app is built from, at bf98827 |
+| [Oliv3rmoon/Mandrake](https://github.com/Oliv3rmoon/Mandrake), Mandrake (formerly Nightshade Station) | Dulcamara's frontend |
 | [darkxex/SwanStationPS5](https://github.com/darkxex/SwanStationPS5) | Mandrake's origin: its platform layer, Vulkan screen, shaders and interface |
 | [BlackBearReloaded's ps5-native-app-boilerplate](https://github.com/blackbearreloaded) | The PS5 native app build, runtime, tooling and update check under all of them |
 | [ps5-payload-dev/sdk](https://github.com/ps5-payload-dev/sdk) | Public PS5 headers, libc++ headers, sysroot, and Clang target support |
@@ -23,47 +25,18 @@
 | [ArkSama/PS5-Lapy-JB-Daemon](https://github.com/ArkSama/PS5-Lapy-JB-Daemon) | Original Lapy project and owned-root design |
 | [mpereiraesaa/PS5-Lapy-JB-Daemon](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon) | Exact-title one-shot helper and cooperative elevation protocol |
 
-## Cores shipped
+## The catalog and the apps
 
-Dulcamara ships **one** core:
-
-| Core | Upstream | License | Notes |
-| --- | --- | --- | --- |
-| EasyRPG Player (libretro) | [EasyRPG/Player](https://github.com/EasyRPG/Player) at `096c004def987f3545198304b1b7a8352f284a50`, with [EasyRPG/liblcf](https://github.com/EasyRPG/liblcf) at `6854310c3432e553fd4ae672ce861899c80c3bd0` | GPL-3.0-or-later (`third_party/easyrpg-player/COPYING`); liblcf MIT (`third_party/liblcf/COPYING`) | RPG Maker 2000 and 2003. Built from source into the app by `tools/build-easyrpg.sh` |
-
-EasyRPG Player carries, built in: [FMMidi](http://unhaut.epizy.com/fmmidi) by yuno (Yoshio Uno),
-BSD-3-Clause; [dr_wav](https://github.com/mackron/dr_libs) by David Reid, public domain or MIT-0; the
-Shinonome (public domain), Baekmuk (Baekmuk License), ttyp0 (ttyp0 license) and WenQuanYi
-(GPL-2.0-or-later with font exception) fonts; the EasyRPG logos (CC-BY-SA 4.0); and
-[libretro-common](https://github.com/libretro/libretro-common)'s `rthreads` (its permissive MIT-style
-licence, in each file). Its authors are listed in `third_party/easyrpg-player/docs/AUTHORS.md`, which the app
-folder carries as `licenses/AUTHORS-EasyRPG-Player.md`.
-
-liblcf is patched by `tools/patches/liblcf-iconv.patch` (MIT, as liblcf): with ICU off, its text encodings go
-through iconv, and a game's encoding is guessed from its bytes.
-
-Built with the core, from pinned sources:
-
-| Component | Source | License |
-| --- | --- | --- |
-| [inih](https://github.com/benhoyt/inih) r62 | `third_party/inih` (submodule) | BSD-3-Clause (`third_party/inih/LICENSE.txt`) |
-| [pixman](https://pixman.org) 0.46.4 | the release tarball, SHA-256 `d09c44ebc3bd5bee7021c79f922fe8fb2fb57f7320f55e97ff9914d2346a591c`, downloaded by `tools/build-easyrpg.sh` | MIT (its `COPYING`, in the app folder as `licenses/LICENSE-pixman.txt`) |
-
-From the PacBrew prefix (below), linked into the core: fmt (MIT), libpng (libpng license), zlib (zlib),
-FreeType (FreeType License), HarfBuzz (MIT), libogg and libvorbis (BSD-3-Clause), mpg123 (LGPL-2.1),
-libsndfile (LGPL-2.1-or-later), FLAC (BSD-3-Clause), Opus (BSD-3-Clause), LAME (LGPL-2.0-or-later), bzip2
-(bzip2 license), libsamplerate (BSD-2-Clause) and GNU libiconv (LGPL-2.1-or-later), which the frontend links
-too. The LGPL libraries are linked statically into a GPL-3.0-or-later program whose whole source is published.
-
-The core is free, and Dulcamara has no paid features, ads or in-app purchases.
+Solanum shows the catalog at [Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog)
+(GPL-3.0-or-later) and installs each listed app from its own GitHub releases. None of them is part of
+Solanum or its release ZIP: each is its authors', under the license the catalog names for it. The tips and the
+hidden lines Solanum shows come from the catalog as it is.
 
 ### Test data, never shipped
 
-The host checks (`tests/test_core.py`, `tests/test_library.py`) run the core on
-[EasyRPG's TestGame](https://github.com/EasyRPG/TestGame), fetched by `tools/fetch-testgame.sh` at commit
-`4bbedb73492c80b79d8290e0b06ea86875b0bdc8` into the ignored `.deps/testgame`. TestGame is GPL-3.0-or-later
-(its `COPYING`), its graphics and sounds CC-BY-4.0, CC0 or public domain as its `AUTHORS.md` lists them. It is
-not committed here and not part of the app or its release ZIP, which carries no game files of any kind.
+`tests/fixtures/` holds a copy of the catalog's `catalog.json` and the answers GitHub's API gave for the newest
+releases of Oliv3rmoon/Nightshade, Physalis, Datura and Mandrake (with their `SHA256SUMS`), for the host checks.
+They are not part of the app or its release ZIP, which carries no app or game files of any kind.
 
 ## Native build dependencies
 
@@ -125,10 +98,8 @@ replace the pinned SDK or install files globally. PacBrew recipes and every
 linked third-party library retain their upstream licenses; applications must
 review those terms before redistribution.
 
-The update-check example (`make update-check-example`) selects `libcurl`, which
-statically links these PacBrew libraries into the example title. Its build
-output stays under ignored `dist/` and is not distributed by this repository; an
-application that ships the update check ships them and must carry their notices:
+Solanum selects `sdl2` and `libcurl`, which statically link these PacBrew libraries into the app (as the
+boilerplate's update-check example does); `licenses/THIRD-PARTY.txt` in the app folder carries their notices:
 
 | Component | Version in PacBrew v0.40.2 | License |
 | --- | --- | --- |
@@ -138,8 +109,8 @@ application that ships the update check ships them and must carry their notices:
 | [zstd](https://github.com/facebook/zstd) | 1.5.6 | BSD-3-Clause (dual-licensed with GPL-2.0) |
 | [libpsl](https://github.com/rockdaboot/libpsl) | 0.21.5 | MIT; built-in Public Suffix List data MPL-2.0 |
 
-`examples/update-check/console_curl.c`, which makes these libraries run in a
-native title, is original BlackBearReloaded code (GPL-3.0-or-later), taken from
+`kit/console_curl.c` (the boilerplate's `examples/update-check/console_curl.c`), which makes these libraries
+run in a native title, is original BlackBearReloaded code (GPL-3.0-or-later), taken from
 the ProsperoRadio and ProsperoLichess projects. Its `gmtime_r` follows Howard
 Hinnant's public-domain `civil_from_days` algorithm.
 
@@ -147,10 +118,10 @@ Hinnant's public-domain `civil_from_days` algorithm.
 
 `third_party/miniz/` holds [miniz](https://github.com/richgel999/miniz) 3.0.2
 (commit `293d4db1b7d0ffee9756d035b9ac6f7431ef8492`), MIT, unmodified, with its
-`LICENSE`; `SOURCE.json` records each file's SHA-256. Dulcamara links it
-(`src/vendor.c`) to unpack updates and to read `.zip` / `.easyrpg` games and XYZ
-pictures for the library; the self-update helper (`examples/self-update-helper`)
-and its host test link it too. The
+`LICENSE`; `SOURCE.json` records each file's SHA-256. Solanum links it
+(`src/vendor.c`) to unpack its own updates; the install helper
+(`helper/self_update_helper`, and the boilerplate's `examples/self-update-helper`)
+and their host tests link it too, and the app folder carries its licence as `licenses/LICENSE-miniz.txt`. The
 helper's archive validation and file helpers are original BlackBearReloaded
 code (GPL-3.0-or-later), taken from the ProsperoStore project.
 
@@ -190,22 +161,23 @@ The BlackBear icon, selection artwork, and default selection track
 (C) 2026 BlackBearReloaded, and distributed under GPL-3.0-or-later. The track
 is titled `Night Drive`.
 
-Dulcamara's icon and home-screen pictures (`sce_sys/icon0.png`, `pic0.dds` and `pic1.dds`
+Solanum's icon and home-screen pictures (`sce_sys/icon0.png`, `pic0.dds` and `pic1.dds`
 with their source PNGs, `background-source.png` and `launch-background-source.png`) are drawn by
-`tools/render-home-art.py`, after Mandrake's and Nightshade's (Oliv3rmoon/Nightshade), Copyright
+`tools/render-home-art.py`, after Dulcamara's, Mandrake's and Nightshade's (Oliv3rmoon/Nightshade), Copyright
 (C) 2026 Oliv3rmoon, and distributed under GPL-3.0-or-later. The name in them is set in Inter (SIL Open Font
 License 1.1).
 
-No proprietary runtime module, encryption key, RTP or game file is included.
+No proprietary runtime module, encryption key or game file is included.
 
-## From SwanStationPS5 and Mandrake
+## From SwanStationPS5, Mandrake and Dulcamara
 
-The frontend is Mandrake's (formerly Nightshade Station), which is [darkxex's SwanStationPS5](https://github.com/darkxex/SwanStationPS5)
-(GPL-3.0-or-later, from [SynoPiia's PSXS5](https://github.com/SynoPiia/PSXS5)). What it brings, and still uses:
+The frontend is Dulcamara's, which is Mandrake's (formerly Nightshade Station), which is [darkxex's SwanStationPS5](https://github.com/darkxex/SwanStationPS5)
+(GPL-3.0-or-later, from [SynoPiia's PSXS5](https://github.com/SynoPiia/PSXS5)). What it brings, and still links
+(the Vulkan screen keeps its shaders and frame interpolation, which Solanum never turns on):
 
 | Component | Use | License |
 | --- | --- | --- |
-| [stb_image, stb_truetype](https://github.com/nothings/stb) | title picture decoding, font rendering (`third_party/stb`) | Public domain / MIT |
+| [stb_image, stb_truetype](https://github.com/nothings/stb) | picture decoding, font rendering (`third_party/stb`) | Public domain / MIT |
 | [Inter](https://github.com/rsms/inter) | interface font (`assets/fonts`) | SIL Open Font License 1.1 (`assets/fonts/OFL.txt`) |
 | [SDL2](https://www.libsdl.org/) (PacBrew port) | events, controllers, audio, software renderer | zlib |
 | [dlmalloc](https://gee.cs.oswego.edu/dl/html/malloc.html) 2.8.6 by Doug Lea | allocator for the direct-memory heap (`third_party/dlmalloc`) | Public domain (CC0) |

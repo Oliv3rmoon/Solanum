@@ -5,15 +5,16 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the idea! One idea per suggestion, please. Search first:
-        if someone already suggested it, add a 👍 and your thoughts there.
+        Thanks for the idea! One idea per suggestion, please. Search first: if someone already
+        suggested it, add a 👍 and your thoughts there. To list an app in the store, open a pull
+        request on Oliv3rmoon/Solanum-Catalog instead.
 
   - type: textarea
     id: problem
     attributes:
       label: What would it help with?
       description: The situation or annoyance behind the idea. This matters more than the solution.
-      placeholder: When I quit a game I lose my place, because I forget to save state.
+      placeholder: I install apps on a USB drive and have to move them by hand.
     validations:
       required: true
 
@@ -21,47 +22,25 @@ body:
     id: idea
     attributes:
       label: Your idea
-      description: What Dulcamara could do. Screens, buttons, settings, whatever helps explain it.
-      placeholder: Save automatically when I quit, and offer "Continue" on the shelf.
+      description: What Solanum could do. Screens, buttons, settings, whatever helps explain it.
+      placeholder: Let me choose the drive a new app goes on.
     validations:
       required: true
 
   - type: dropdown
     id: area
     attributes:
-      label: Which part of Dulcamara?
+      label: Which part of Solanum?
       options:
-        - Shelf (home screen)
-        - In-game menu
+        - Browse and search
+        - App pages
+        - Updates
+        - Installed
+        - Installing and opening
         - Settings
-        - Graphics and video
-        - Sound
-        - Controls
-        - Games and compatibility
-        - Saves, states and memory cards
-        - Cheats
-        - RetroAchievements
-        - PC tool (Dulcamara_sync.py)
         - Other
     validations:
       required: true
-
-  - type: dropdown
-    id: importance
-    attributes:
-      label: How much would it matter to you?
-      options:
-        - Nice to have
-        - I'd use it often
-        - It's stopping me from using Dulcamara for something
-    validations:
-      required: true
-
-  - type: textarea
-    id: examples
-    attributes:
-      label: Seen it elsewhere?
-      description: Another emulator or app that does this well (a screenshot helps).
 
   - type: checkboxes
     id: checks
@@ -70,5 +49,5 @@ body:
       options:
         - label: I searched the existing suggestions and this isn't one of them.
           required: true
-        - label: It doesn't involve getting games, the RTP or keys (those won't be added).
+        - label: It doesn't involve getting games, keys or anything that isn't open-source homebrew (those won't be added).
           required: true

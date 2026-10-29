@@ -270,6 +270,11 @@ static int read_app(const char *json, size_t length, int index, const Catalog *k
         say(log, user, "catalog: app %d (%s) left out: %s", index, label, why);
         return 0;
     }
+    /* The install helper finds the app's folder in the ZIP whatever its name, and names the installed one after
+     * the title ID, as Nightshade's apps are installed. */
+    if (strcmp(app->folder, app->title_id) != 0)
+        say(log, user, "catalog: app %d (%s): its folder %s is installed as %s, after its title ID", index, label,
+            app->folder, app->title_id);
     return 1;
 }
 

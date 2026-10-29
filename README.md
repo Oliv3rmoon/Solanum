@@ -1,137 +1,128 @@
 <p align="center">
-  <img src="sce_sys/icon0.png" width="128" alt="Dulcamara icon">
+  <img src="sce_sys/icon0.png" width="128" alt="Solanum icon">
 </p>
 
-<h1 align="center">Dulcamara</h1>
+<h1 align="center">Solanum</h1>
 
 <p align="center">
-  <strong>Dulcamara, a Nightshade app: RPG Maker 2000 and 2003 games on PS5 homebrew, by Oliv3rmoon. EasyRPG Player in Nightshade's black and red, made for the controller, updated from its own releases.</strong>
+  <strong>Solanum, a Nightshade app: a store for open-source PS5 homebrew, by Oliv3rmoon. It installs and updates the apps of an open catalog from their own GitHub releases, each checked against its checksums, in Nightshade's black and red.</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Oliv3rmoon/Dulcamara/releases/latest"><img src="https://img.shields.io/github/v/release/Oliv3rmoon/Dulcamara?style=for-the-badge&label=download&color=e5484d&labelColor=0d0d0f" alt="Download the latest release"></a>
+  <a href="https://github.com/Oliv3rmoon/Solanum/releases/latest"><img src="https://img.shields.io/github/v/release/Oliv3rmoon/Solanum?style=for-the-badge&label=download&color=e5484d&labelColor=0d0d0f" alt="Download the latest release"></a>
   <a href="https://discord.gg/pSqgRU3YP9"><img src="https://img.shields.io/badge/discord-nightly-0d0d0f?style=for-the-badge&logo=discord&logoColor=e5484d" alt="Discord: nightly"></a>
   <a href="https://buymeacoffee.com/oliv3rmoon"><img src="https://img.shields.io/badge/buy%20me%20a%20coffee-0d0d0f?style=for-the-badge&logo=buymeacoffee&logoColor=e5484d" alt="Buy me a coffee"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-0d0d0f?style=for-the-badge&labelColor=0d0d0f&color=e5484d" alt="GPL-3.0-or-later"></a>
 </p>
 
-Dulcamara, a Nightshade app named after *Solanum dulcamara*, the bittersweet nightshade, is a PS5
-homebrew app that runs games made with RPG Maker 2000 and RPG Maker 2003: story games and RPGs. It
-plays them on [EasyRPG Player](https://easyrpg.org), the free reimplementation of those engines, built
-into the app as a libretro core, and it is built on [Mandrake (formerly Nightshade Station)](https://github.com/Oliv3rmoon/Mandrake),
-so it shares its frontend: the Vulkan screen with its CRT shaders, the black-and-red look of
-[Nightshade](https://github.com/Oliv3rmoon/Nightshade) and the updates from its own releases. It is the
-first step of a Nightshade answer to JoiPlay; more engines can join EasyRPG in the same app. The current
-version is **0.1.0**; what changed is in the [changelog](docs/CHANGELOG.md).
+Solanum, a Nightshade app named after the genus at the heart of the nightshade family, is a PS5 homebrew
+store. It lists the apps of the open catalog at
+[Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog), installs and updates each one
+from its own GitHub releases after checking the download against the release's checksum file, shows what
+changed before an update, and opens what it installed. Its installs are those of
+[Nightshade](https://github.com/Oliv3rmoon/Nightshade)'s Settings > Apps, and it is built on
+[Dulcamara](https://github.com/Oliv3rmoon/Dulcamara)'s frontend, which is
+[Mandrake](https://github.com/Oliv3rmoon/Mandrake)'s. The current version is **0.1.0**; what changed is in the
+[changelog](docs/CHANGELOG.md).
 
 ## What you get
 
-- **RPG Maker 2000 and 2003 games.** Everything EasyRPG Player runs, from its pinned source: the original
-  engines' events, battles, pictures and sound (MIDI through EasyRPG's own synthesiser, WAV, Ogg Vorbis
-  and MP3), and the Maniac Patch and EasyRPG extensions it supports. Japanese, Korean, Chinese, Cyrillic
-  and Western games read their text in their own encoding.
-- **A library that finds your games.** Copy a game's folder (or a `.zip` / `.easyrpg` of it) and it shows
-  up with its title from `RPG_RT.ini` and its own title screen as the cover. Sort by title or by the last
-  played; Square looks for new games without restarting.
-- **Made for the controller.** Cross confirms, Circle cancels, Triangle opens the game's menu, and every
-  button can be mapped again in Settings. The touchpad opens Dulcamara's menu at any time.
-- **Fast-forward.** Hold R2 (or press it once, if you prefer) to run the game x2 to x8, for grinding and
-  for long cutscenes.
-- **CRT and LCD shaders.** CRT Royale, CRT Lottes, CRT Pi, Newpixie, Hyllian NTSC, Mattias, NTSC
-  signals, LCD3x, zfast LCD and Game Boy LCD, from Mandrake's Vulkan screen. Or sharp square
-  pixels, whole-number scaling and the game's own shape.
-- **Nothing to pay for.** No paid features, no ads, no account. Free software under the GPL.
-- **Updates from its own releases.** It asks [Oliv3rmoon/Dulcamara](https://github.com/Oliv3rmoon/Dulcamara/releases)
-  for a newer release and installs it, after checking `PPSA99010.zip` against the release's `SHA256SUMS`.
-- **No games.** It ships none and downloads none: copy your own.
+- **The catalog's apps.** Browse them by category, the Nightshade family first, or search by name. Each has a
+  page with what it does, its license, an **attested** badge when its builds are attested by its own CI, its
+  newest version and when it came out, and the release's notes.
+- **Install, update, open.** Install puts an app in `/data/homebrew/<title ID>` beside Solanum; Update replaces
+  an older version's files and keeps your own; Open closes Solanum and starts the app.
+- **Checked before anything is unpacked.** Every download is checked against the SHA-256 its release's
+  checksum file (usually `SHA256SUMS`) gives it, as it arrives and again before it is unpacked. One that
+  doesn't match is never unpacked, and Solanum says so.
+- **Downloads that pick up where they stopped.** An install cut off by the network goes on from where it
+  stopped the next time.
+- **Updates.** One tab lists every installed app with a newer release, with its changelog beside it.
+- **Installed.** Where each app lives and how much room it takes.
+- **Open source only.** The catalog lists open-source homebrew, each linking its source and its license.
+  Solanum never offers game files, has no "add any URL", and downloads only the catalog's apps' own
+  releases.
+- **Nothing to pay for.** No ads, no account, no tracking. Free software under the GPL.
 
 ## Install
 
-1. Download `PPSA99010.zip` from the [latest release](https://github.com/Oliv3rmoon/Dulcamara/releases/latest)
-   and unzip it.
-2. Copy its `PPSA99010` folder to `/data/homebrew/` on the PS5 over FTP, as you install the other
-   Nightshade apps, and set its permissions to `777` (in FileZilla: right-click the folder, *File
-   permissions*, `777`, recurse into subdirectories). Without them the PS5 says *"Can't start the game
-   or app"*. Nightshade's **Settings > Apps** can install it for you instead.
-3. Restart ShadowMountPlus (or the console). **Dulcamara** appears on the home screen.
-4. Start it once: it makes its folders in `/data/dulcamara/` and shows an empty library that says
-   where games go.
+1. Download `PPSA76526.zip` from the [latest release](https://github.com/Oliv3rmoon/Solanum/releases/latest) and
+   unzip it.
+2. Copy its `PPSA76526` folder to `/data/homebrew/` on the PS5 over FTP, as you install the other Nightshade
+   apps, and set its permissions to `777` (in FileZilla: right-click the folder, *File permissions*, `777`,
+   recurse into subdirectories). Without them the PS5 says *"Can't start the game or app"*.
+3. Restart ShadowMountPlus (or the console). **Solanum** appears on the home screen.
 
-Its title ID, `PPSA99010`, is its own: it sits beside Mandrake and the other Nightshade apps.
+Its title ID, `PPSA76526`, spells SOLAN on a phone keypad; its data lives in `/data/solanum/`.
 
-Like Mandrake, it needs `/data` unlocked to look into its games folder: LegacyJB, etaHEN's
-*Legacy CMD server* or the Lapy helper it carries all do it (see Mandrake's README,
+Solanum needs what the other Nightshade apps need: a HEN with the payload loader on port 9021 (etaHEN, or
+another with an ELF loader there), which takes Solanum's install helper and its launch payload, and `/data`
+unlocked so it can see the apps already installed (LegacyJB, etaHEN's *Legacy CMD server*, or the Lapy helper it
+carries; see Mandrake's README,
 [Unlocking /data](https://github.com/Oliv3rmoon/Mandrake#unlocking-data-so-swanstationps5-can-see-your-games)).
 
-## Where games go
+## Using it
 
-```text
-/data/homebrew/PPSA99010/            the app
-/data/dulcamara/
-├── games/
-│   ├── <Game>/                      one folder per game: RPG_RT.ldb, RPG_RT.lmt, RPG_RT.ini, Title/, ...
-│   ├── <Series>/<Game>/             or one folder down
-│   ├── <Game>.zip                   or a .zip of the game (the game at its root or in a folder inside it)
-│   └── <Game>.easyrpg               or an .easyrpg (a .zip by another name)
-├── rtp/2000/ and rtp/2003/          the RPG Maker run-time packages (RTP), for games that need them
-├── settings.ini, played.txt
-└── logs/dulcamara.log       send this with bug reports
-```
-
-- **A game is a folder that holds `RPG_RT.ldb` and `RPG_RT.lmt`**, in any case. Copy the whole folder,
-  with its `Title`, `CharSet`, `Music` and other folders.
-- **Saves stay in the game's own folder** (`Save01.lsd`...), as on a PC, so they move with the game. For
-  a `.zip` or `.easyrpg`, EasyRPG keeps them in a `.save` folder beside the archive.
-- **The RTP.** Many games use pictures and sounds from the RPG Maker run-time package instead of
-  carrying them. If a game shows missing graphics or sounds, put the RTP's folders (`Backdrop`,
-  `Battle`, `CharSet`...) in `rtp/2000` (RPG Maker 2000 games) or `rtp/2003` (2003 games). The free
-  [EasyRPG RTP replacement](https://easyrpg.org/rtp-replacement/) works there too.
-- Copy games over FTP: the app reads the folder each time it opens, and Square on the library looks again.
-
-## Controls
-
-| Button | In a game (EasyRPG Player's buttons, the defaults) |
+| Button | |
 | --- | --- |
-| Cross | Decision (A) |
-| Circle | Cancel (B) |
-| Triangle | Cancel and the game's menu (X) |
-| Square | Shift (Y) |
+| L1 / R1 | The tabs: Browse, Updates, Installed, About |
 | D-pad, left stick | Move |
-| L3, R3 | The 0 and 5 keys |
-| OPTIONS | EasyRPG Player's own settings |
-| R2 | Fast-forward (while held, or on and off) |
-| Touchpad | Dulcamara's menu: resume, fast-forward, back to the title screen, settings, quit |
+| Cross | Open an app's page; on the page, Install, Update or Open |
+| Circle | Back; during an install, cancel it (until its files are being put in place) |
+| Triangle | Search (Browse) |
+| Square | Ask for the catalog and the newest releases again |
+| L2 / R2, right stick | Scroll the release notes |
+| OPTIONS | Settings: the interface sounds, Solanum's own updates, closing it |
 
-Every button but R2 and the touchpad can be mapped in **Settings > Controls**. On the library: Cross
-plays, Triangle sorts, Square looks for new games, OPTIONS opens Settings.
+A new app appears on the home screen once the homebrew loader has looked again (ShadowMountPlus's next scan, or
+a restart). Until then Open says so; afterwards Open works from Solanum and the home screen alike.
 
-## Settings
+## How an install works
 
-- **Picture:** the shader, smooth or sharp scaling, whole-number scaling, the game's shape or 16:9,
-  upscaling (Scale2x, xBR) when no shader is on. Opened from a game, the game shows behind it.
-- **Playing:** the fast-forward speed and how R2 works, the left stick, the game's volume, the FPS.
-- **Controls:** each controller button's game button.
-- **Library:** the order, the interface sounds.
-- **System:** the update check, and closing the app.
+It is Nightshade's Settings > Apps, for every app of the catalog:
+
+1. Solanum reads `catalog.json` from Solanum-Catalog (and keeps a copy, so it opens offline too), then asks
+   `api.github.com` for each app's newest release: one request an app, of the 60 an hour GitHub allows an
+   address. Drafts and pre-releases never count.
+2. The release must have the file the catalog names (`{version}` in its name is the tag without a leading `v`)
+   and its SHA-256: the line the checksum file has for it, or else GitHub's own digest of the file. When both
+   are there they must agree; with neither, nothing is offered. The download's address is made from the
+   repository, the tag and the name, never taken from anywhere else.
+3. Install sends `self-updater.elf` (the boilerplate's self-update helper, with Nightshade's "install") from
+   Solanum's folder to the payload loader. Solanum downloads the ZIP from GitHub, checks it as it arrives and
+   hands it to the helper, which checks it again, unpacks the app's folder (the one holding `eboot.bin` and
+   `sce_sys/param.json`) and checks that it is the title and version asked for. Only then does it put the folder
+   beside Solanum's, or, for an update, put the new files in place of the old ones (keeping the version it
+   replaced in `/data/solanum/previous-version/` until the next update). Anything that doesn't match is
+   refused, and nothing is changed.
+4. Open sends `app-launch.elf` to the payload loader; Solanum closes, and the payload opens the app.
+
+Each download is kept in `/data/solanum/cache/` while it arrives, so a cut-off one goes on with an HTTP range
+next time; a copy that doesn't match its checksum is deleted, never resumed. The logs are in
+`/data/solanum/logs/` (`solanum.log`, `updater.log`, `app-launch.log`).
+
+## Add an app to the catalog
+
+Open a pull request on [Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog): one entry in
+`catalog.json`'s `apps`, as its README says. Open-source homebrew only, released on GitHub with a checksum file.
+Solanum shows it once the pull request is in.
 
 ## Updates
 
-When it starts (and from **Settings > System > Check for updates now**) Dulcamara asks GitHub for
-the newest release of [Oliv3rmoon/Dulcamara](https://github.com/Oliv3rmoon/Dulcamara/releases)
-that is not a pre-release. When its tag is a newer version and it carries `PPSA99010.zip` and
-`SHA256SUMS`, both this repository's own files, the ZIP is checked against `SHA256SUMS` and installed
-into the folder the app runs from; the new version runs from the next start. Your games and saves are not
-touched. A release built by this repository's workflow can be checked with
-`gh attestation verify PPSA99010.zip -R Oliv3rmoon/Dulcamara`.
+When it starts (and from **Settings > System > Check for updates now**) Solanum asks GitHub for the newest release
+of [Oliv3rmoon/Solanum](https://github.com/Oliv3rmoon/Solanum/releases) that is not a pre-release. When its tag is a
+newer version and it carries `PPSA76526.zip` and `SHA256SUMS`, both this repository's own files, the ZIP is checked
+against `SHA256SUMS` and installed into the folder the app runs from; the new version runs from the next start.
+A release built by this repository's workflow can be checked with
+`gh attestation verify PPSA76526.zip -R Oliv3rmoon/Solanum`.
 
 ## Requests, bugs and support
 
-- **Ask for a fix or a feature:** [open an issue](https://github.com/Oliv3rmoon/Dulcamara/issues/new/choose),
-  or ask in **[nightly on Discord](https://discord.gg/pSqgRU3YP9)**.
-- **Bugs:** open an issue with `/data/dulcamara/logs/dulcamara.log`, copied right after
-  the problem, and which game it was. Never attach games or their files.
-- **A game that doesn't run right:** check it on EasyRPG Player on a PC first; if it fails there too, the
-  [EasyRPG Player issues](https://github.com/EasyRPG/Player/issues) are the place.
+- **Ask for a fix or a feature:** [open an issue](https://github.com/Oliv3rmoon/Solanum/issues/new/choose), or
+  ask in **[nightly on Discord](https://discord.gg/pSqgRU3YP9)**.
+- **Bugs:** open an issue with `/data/solanum/logs/solanum.log` (and `updater.log` for an install), copied right
+  after the problem.
+- **An app that doesn't work:** its own repository is the place; Solanum only installs its releases.
 - **If my work helps you,** you can [buy me a coffee](https://buymeacoffee.com/oliv3rmoon).
 
 ## Building from source
@@ -142,62 +133,55 @@ The PS5 app builds on Linux or WSL (Ubuntu 24.04); GitHub Actions builds every p
 ```bash
 sudo apt install clang-18 lld-18 llvm-18 libclang-rt-18-dev make ninja-build ccache cmake pkg-config \
   python3 python3-venv tar unzip wget zip zstd
-git clone --recurse-submodules https://github.com/Oliv3rmoon/Dulcamara.git
-cd Dulcamara
-make                            # -> dist/PPSA99010/ and dist/PPSA99010.zip
-python3 tools/make_release.py   # optional: build, and pack PPSA99010.zip as a release has it
+git clone https://github.com/Oliv3rmoon/Solanum.git
+cd Solanum
+make                            # -> dist/PPSA76526/, with self-updater.elf and app-launch.elf
+python3 tools/make_release.py   # optional: build, and pack PPSA76526.zip as a release has it
 ```
 
-`make` builds EasyRPG Player's core (`tools/build-easyrpg.sh`: EasyRPG Player and liblcf from their
-submodules, pixman from its release, the rest from the PacBrew prefix, all in one archive with the API
-renamed `easyrpg_retro_*`), links the RADV Vulkan driver (`tools/fetch-radv.sh`), compiles `src/` and
-signs `eboot.bin`.
+`make` builds the install helper and the launch payload with the PS5 payload SDK, links the RADV Vulkan driver
+(`tools/fetch-radv.sh`), compiles `src/` and the kit, and signs `eboot.bin`.
 
-The host checks need no PS5 SDK (cmake, a C/C++ compiler, and fmt, libpng, FreeType, HarfBuzz,
-libvorbis, mpg123 and pixman from the system):
+The host checks need no PS5 SDK, only a C and C++ compiler:
 
 ```bash
-make host-checks   # the game detection (tests/test_library.py) and EasyRPG Player run headless
-                   # on EasyRPG's TestGame (tests/test_core.py), fetched for the test only
-make desktop       # the app in a window on this computer (SDL2), for working on the interface
+make host-checks   # the store (tests/store_check.c, on the live catalog and the apps' real releases in
+                   # tests/fixtures), the install helper's whole conversation (tests/helper_check.cpp),
+                   # and Solanum's own update (tests/update_release_check.c)
+make desktop       # the app in a window on this computer (SDL2), its store answering from tests/fixtures
 ```
 
 | Path | What |
 |---|---|
-| `src/main.c` | start-up, the main loop, the game screen |
-| `src/core/cores.h`, `cores.c` | the cores' table: each core's libretro functions and defaults |
-| `src/core/host.c` | the libretro host: environment, picture, sound, buttons |
-| `src/library.c`, `src/rpgmaker.c` | finding games, their titles, covers and engine |
-| `src/covers.c` | the title screens, read on a background thread |
-| `src/ui/` | the library, the in-game menu, Settings, and Mandrake's drawing, text and sounds |
-| `src/platform/` | Mandrake's PS5 platform layer and Vulkan screen (with the CPU-frame upload for the shaders) |
-| `tools/build-easyrpg.sh` | the core, for the PS5 or (`host`) for this computer |
-| `tools/patches/liblcf-iconv.patch` | liblcf's encodings through iconv, without ICU |
+| `src/main.c` | start-up, the main loop, notices, what the screens share |
+| `src/catalog.c` | reading `catalog.json`; bad entries are left out with a log line |
+| `src/apps.c` | where an app is, what a release offers, the launch conversation, the Konami code, tips |
+| `src/store.c` | the store's thread, installs and Open (Nightshade's Settings > Apps) |
+| `src/resume.c` | downloads that go on where they stopped |
+| `src/ui/` | Browse, Updates, Installed, About, the app pages, the search keyboard, Settings |
+| `kit/` | the self-update kit: Nightshade's copy of the boilerplate's (see `kit/README.md`) |
+| `helper/` | the install helper and the launch payload, Nightshade's |
+| `src/platform/` | Mandrake's PS5 platform layer and Vulkan screen |
 | `tools/render-home-art.py` | the icon and the home-screen pictures |
 | `docs/boilerplate/` | the PS5 app boilerplate everything is built on |
 
-### Adding a core
-
-A second core (ScummVM's libretro core is next) is a static archive built like EasyRPG's, with its API
-renamed `<core>_retro_*`, and one entry in `src/core/cores.c`'s table; `src/core/cores.h` lists the steps.
-
 ## Thanks
 
-- **[EasyRPG](https://easyrpg.org)**, the team behind EasyRPG Player and liblcf, who made RPG Maker 2000
-  and 2003 games playable everywhere as free software. Dulcamara only puts their work on the PS5;
-  how well a game runs is theirs to credit.
-- **[Mandrake (formerly Nightshade Station)](https://github.com/Oliv3rmoon/Mandrake)** and the work it is made of:
-  **[SwanStationPS5](https://github.com/darkxex/SwanStationPS5)** by **darkxex**, whose frontend this is,
+- **[Nightshade](https://github.com/Oliv3rmoon/Nightshade)**, whose Settings > Apps, update helper and launch
+  payload Solanum's installs and Open button are.
+- **Mihawk**, whose [PS5 RetroArch](https://github.com/mihawk-99/PS5_RetroArch) forwarder's launch payload is the
+  one Solanum sends, and who ported RADV to the PS5.
+- **[Dulcamara](https://github.com/Oliv3rmoon/Dulcamara)** and **[Mandrake (formerly Nightshade Station)](https://github.com/Oliv3rmoon/Mandrake)**,
+  and the work they are made of: **[SwanStationPS5](https://github.com/darkxex/SwanStationPS5)** by **darkxex**,
   **[PSXS5](https://github.com/SynoPiia/PSXS5)** by **SynoPiia**, and **BlackBearReloaded**'s
-  ps5-native-app-boilerplate.
-- **[ps5-payload-dev](https://github.com/ps5-payload-dev)** for the SDK and PacBrew, **Mihawk-99** for the
-  RADV port, and everyone in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+  ps5-native-app-boilerplate, whose self-update kit and helper are under all of it.
+- **[ps5-payload-dev](https://github.com/ps5-payload-dev)** for the SDK and PacBrew, and everyone in
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- Every author whose app is in the catalog.
 
 ## Legal
 
-Dulcamara is free software under the GNU General Public License, version 3 or later
-([LICENSE](LICENSE)). EasyRPG Player is GPL-3.0-or-later and liblcf MIT; every component keeps its own
-licence, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and the app folder carries their
-texts in `licenses/`. It is an unofficial project: neither the EasyRPG team, Enterbrain / Kadokawa nor
-Sony endorse it. RPG Maker is a trademark of its owners. No game, RTP, key or system file is included or
-downloaded: use games you have the right to play.
+Solanum is free software under the GNU General Public License, version 3 or later ([LICENSE](LICENSE)). Every
+component keeps its own licence, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and the app folder
+carries their texts in `licenses/`. Each app it installs is its authors', under its own license. It is an
+unofficial project, not endorsed by Sony. It includes and downloads no game, key or system file.

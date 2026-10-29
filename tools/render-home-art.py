@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
-# Dulcamara - Draw the home-screen pictures: the icon, the background and the launch picture.
+# Solanum - Draw the home-screen pictures: the icon, the background and the launch picture.
 # SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Draw Dulcamara's home-screen pictures in Nightshade's style.
+"""Draw Solanum's home-screen pictures in Nightshade's style.
 
 usage: python3 tools/render-home-art.py              (needs Pillow and NumPy)
        python3 tools/render-home-art.py --preview DIR  (small copies in DIR; nothing else changes)
 
-Mandrake's (formerly Nightshade Station's) tools/render-home-art.py (itself Nightshade's, Oliv3rmoon/Nightshade), with an RPG's
-message window in place of Mandrake's disc: the same nightshade flower (five red petals round a pale cone),
-black berries and dark leaves, on near black with a red glow and faint stars, in Nightshade's palette (its
+Dulcamara's tools/render-home-art.py (Mandrake's, itself Nightshade's, Oliv3rmoon/Nightshade), with a store's
+shelf of app tiles in place of Dulcamara's RPG window: the same nightshade flower (five red petals round a pale
+cone), black berries and dark leaves, on near black with a red glow and faint stars, in Nightshade's palette (its
 "nightly" theme). The name is set in Inter (assets/fonts, SIL Open Font License).
 
 Writes, in sce_sys/:
-  icon0.png                     512x512: an RPG's menu window, the cursor at its first entry, with the
-                                nightshade blooming over it
-  background-source.png         3840x2160 (pic0, on the home screen): the window of a title screen at the
-                                right with the name in it, the nightshade climbing to flower over its corner
+  icon0.png                     512x512: a window holding a row of app tiles, the middle one lit with a
+                                download arrow, the nightshade blooming over it
+  background-source.png         3840x2160 (pic0, on the home screen): a window at the right with the name in
+                                it and a shelf of app tiles under the name, the nightshade climbing to flower
+                                over its corner
   launch-background-source.png  3840x2160 (pic1, while the app starts): the flower over a window holding
                                 the name
   pic0.dds, pic1.dds            those two as BC7 (one 3840x2160 BC7_UNORM DX10 texture, no
@@ -221,7 +222,7 @@ def berries(image, x, y, r):
         berry(image, x + dx * r, y + dy * r, r * s)
 
 
-# ---- Dulcamara's own: an RPG's window and the name -------------------------------------
+# ---- Solanum's own: a store's window, its app tiles and the name ------------------------
 
 
 FONT = root / 'assets' / 'fonts' / 'Inter-600.ttf'
@@ -235,8 +236,8 @@ def rounded_mask(width, height, radius, scale=4):
 
 
 def window(image, x, y, w, h):
-    """An RPG's message window in Nightshade's colours: a dark glassy panel, lighter at the top, inside a pale
-    line and a red one, as RPG Maker 2000 draws its windows from a system graphic."""
+    """A window in Nightshade's colours (Dulcamara's): a dark glassy panel, lighter at the top, inside a pale
+    line and a red one."""
     x, y, w, h = int(x), int(y), int(w), int(h)
     r = max(4, int(min(w, h) * 0.06))
     edge = max(2, int(min(w, h) * 0.018))
@@ -255,17 +256,6 @@ def window(image, x, y, w, h):
     # a sheen along the top of the panel
     sheen = np.exp(-((t[..., 0] - 0.06) / 0.05) ** 2) * core
     region += sheen[..., None] * rgb(PALE) * 0.05
-
-
-def cursor(image, x, y, size, color=None):
-    """The menu cursor of an RPG: a small triangle pointing right, in square pixels."""
-    color = rgb(color or RED)
-    px = max(1, int(size / 7))
-    for row in range(7):
-        span = 4 - abs(3 - row)
-        for col in range(span):
-            x0, y0 = int(x + col * px), int(y + row * px)
-            image[y0:y0 + px, x0:x0 + px] = color
 
 
 def text(image, x, y, words, size, color, spacing=0.0, anchor='la', weight=1.0):
@@ -288,11 +278,51 @@ def text(image, x, y, words, size, color, spacing=0.0, anchor='la', weight=1.0):
     image[:] = image * (1 - a) + rgb(color) * a
 
 
-def lines(image, x, y, w, count, gap, thickness, color, lengths):
-    """Text lines in a window, as bars: a menu's entries seen from afar."""
+def arrow(image, cx, cy, size, color):
+    """A download arrow: a shaft and a head pointing down, and the line it lands on."""
+    shaft = [(cx - size * 0.11, cy - size * 0.5), (cx + size * 0.11, cy - size * 0.5), (cx + size * 0.11, cy + size * 0.02),
+             (cx + size * 0.32, cy + size * 0.02), (cx, cy + size * 0.34), (cx - size * 0.32, cy + size * 0.02),
+             (cx - size * 0.11, cy + size * 0.02)]
+    box = bounds(image, shaft, pad=4)
+    put(image, box, shape_mask(shaft, box), color)
+    base = [(cx - size * 0.42, cy + size * 0.44), (cx + size * 0.42, cy + size * 0.44), (cx + size * 0.42, cy + size * 0.56),
+            (cx - size * 0.42, cy + size * 0.56)]
+    box = bounds(image, base, pad=4)
+    put(image, box, shape_mask(base, box), color)
+
+
+def tile(image, x, y, size, lit):
+    """An app's tile on the store's shelf: a rounded square, the chosen one in Nightshade's red with a download
+    arrow, the others dark glass with a faint plus."""
+    x, y, size = int(x), int(y), int(size)
+    r = max(3, int(size * 0.2))
+    outer = rounded_mask(size, size, r)
+    edge = max(1, int(size * 0.035))
+    inner = np.zeros_like(outer)
+    inner[edge:size - edge, edge:size - edge] = rounded_mask(size - 2 * edge, size - 2 * edge, max(2, r - edge))
+    region = image[y:y + size, x:x + size]
+    t = np.linspace(0, 1, size, dtype=np.float32)[:, None, None]
+    if lit:
+        rim, fill = rgb(PALE) * 0.85, rgb(RED) * (1.05 - 0.35 * t) + rgb(DEEP) * 0.35 * t
+    else:
+        rim, fill = rgb(EDGE) * 1.4, rgb(PANEL) * (1.5 - 0.5 * t)
+    region[:] = region * (1 - outer[..., None]) + rim * outer[..., None]
+    region[:] = region * (1 - inner[..., None]) + fill * inner[..., None]
+    if lit:
+        arrow(image, x + size / 2, y + size * 0.47, size * 0.55, (0xff, 0xf4, 0xf0))
+    else:
+        bar = max(1, int(size * 0.08))
+        cx, cy = x + size // 2, y + size // 2
+        image[cy - bar // 2:cy - bar // 2 + bar, cx - int(size * 0.22):cx + int(size * 0.22)] = rgb(DIM) * 0.6
+        image[cy - int(size * 0.22):cy + int(size * 0.22), cx - bar // 2:cx - bar // 2 + bar] = rgb(DIM) * 0.6
+
+
+def shelf(image, x, y, width, count, lit, gap=0.28):
+    """count tiles side by side across width, the one at index lit chosen."""
+    size = width / (count + (count - 1) * gap)
     for i in range(count):
-        y0 = int(y + i * gap)
-        image[y0:y0 + int(thickness), int(x):int(x + w * lengths[i % len(lengths)])] = rgb(color)
+        tile(image, x + i * size * (1 + gap), y, size, i == lit)
+    return size
 
 
 def vine(image, x0, y0, x1, y1, sway, turns, thickness):
@@ -309,12 +339,10 @@ def icon(n=512):
     image = canvas(n, n)
     glow(image, n * 0.5, n * 0.48, n * 0.55, DEEP, 0.85)
     glow(image, n * 0.5, n * 0.38, n * 0.22, RED, 0.12)
-    # an RPG's menu window in the lower half, the cursor at its first entry
+    # a store's window in the lower half: a shelf of three app tiles, the middle one lit with a download arrow
     wx, wy, ww, wh = n * 0.12, n * 0.50, n * 0.76, n * 0.36
     window(image, wx, wy, ww, wh)
-    cursor(image, wx + n * 0.07, wy + n * 0.075, n * 0.06, PALE)
-    lines(image, wx + n * 0.17, wy + n * 0.092, n * 0.48, 1, n * 0.085, n * 0.028, TEXT, (0.82,))
-    lines(image, wx + n * 0.17, wy + n * 0.177, n * 0.48, 2, n * 0.085, n * 0.028, SOFT, (0.62, 0.45))
+    shelf(image, wx + ww * 0.11, wy + wh * 0.25, ww * 0.78, 3, 1)
     # the nightshade blooming over the window, berries hanging at its corner
     stem(image, curve((n * 0.50, n * 0.50), (n * 0.49, n * 0.43), (n * 0.50, n * 0.36)), n * 0.010)
     leaf(image, n * 0.30, n * 0.43, n * 0.15, n * 0.15 * 0.3, -2.75, bend=-0.12, rim=0.5)
@@ -337,14 +365,13 @@ def background(w=3840, h=2160):
                                       (w * 0.94, h * 1.06, w * 0.22, 3.9, 0.08), (w * 0.6, h * 1.08, w * 0.17, 4.5, -0.1),
                                       (-w * 0.02, h * 1.04, w * 0.2, 5.6, 0.1)):
         leaf(image, x, y, length, length * 0.24, angle, bend=bend)
-    # The window of an RPG's title screen at the right, the name in it and its menu under the name.
+    # A store's window at the right, the name in it and a shelf of app tiles under the name.
     wx, wy, ww, wh = w * 0.53, h * 0.33, w * 0.38, h * 0.36
     glow(image, wx + ww / 2, wy + wh / 2, None, RED, 0.25, ring=wh * 0.62, width=h * 0.03)
     window(image, wx, wy, ww, wh)
-    text(image, wx + ww / 2, wy + wh * 0.30, 'Dulcamara', h * 0.100, TEXT, anchor='mm')
-    text(image, wx + ww / 2, wy + wh * 0.53, 'A NIGHTSHADE APP', h * 0.032, RED, spacing=0.45, anchor='mm')
-    cursor(image, wx + ww * 0.33, wy + wh * 0.70, h * 0.030, PALE)
-    lines(image, wx + ww * 0.40, wy + wh * 0.712, ww * 0.30, 2, wh * 0.12, h * 0.010, DIM, (0.9, 0.62))
+    text(image, wx + ww / 2, wy + wh * 0.25, 'Solanum', h * 0.100, TEXT, anchor='mm')
+    text(image, wx + ww / 2, wy + wh * 0.46, 'A NIGHTSHADE APP', h * 0.032, RED, spacing=0.45, anchor='mm')
+    shelf(image, wx + ww * 0.17, wy + wh * 0.60, ww * 0.66, 4, 1)
     # The nightshade climbs from below at the window's left and flowers over its corner.
     points = vine(image, w * 0.50, h * 1.02, w * 0.515, h * 0.36, w * 0.010, 2.6, w * 0.0032)
     for t, angle, side in ((0.22, 3.6, -1), (0.46, 5.9, 1), (0.70, 3.3, -1)):
@@ -372,7 +399,7 @@ def launch(w=3840, h=2160):
     wx, wy, ww, wh = w * 0.29, h * 0.47, w * 0.42, h * 0.27
     glow(image, cx, wy + wh / 2, None, RED, 0.30, ring=wh * 0.75, width=h * 0.035)
     window(image, wx, wy, ww, wh)
-    text(image, cx, wy + wh * 0.40, 'Dulcamara', h * 0.095, TEXT, anchor='mm')
+    text(image, cx, wy + wh * 0.40, 'Solanum', h * 0.095, TEXT, anchor='mm')
     text(image, cx, wy + wh * 0.74, 'A NIGHTSHADE APP', h * 0.032, RED, spacing=0.45, anchor='mm')
     stem(image, curve((cx, wy), (cx - w * 0.01, cy - h * 0.12), (cx, cy - h * 0.20)), w * 0.004)
     flower(image, cx, cy - h * 0.22, h * 0.15, -math.pi / 2)

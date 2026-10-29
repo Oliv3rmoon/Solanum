@@ -1,15 +1,15 @@
-# Dulcamara - cloud build of the PS5 app, with the host checks (Mandrake's workflow).
-# A version tag (X.Y.Z, the NP_VERSION of src/nightshade.h) pushed to Oliv3rmoon/Dulcamara also publishes:
-# job "release" puts the PPSA99010.zip and SHA256SUMS this run built on a GitHub release, the latest, which the
-# app's update check (src/update_release.h) and Nightshade's Settings > Apps then offer. Nothing built anywhere
-# else is ever attached, and a release that already has a ZIP is never changed.
+# Solanum - cloud build of the PS5 app, with the host checks (Dulcamara's workflow, which is Mandrake's).
+# A version tag (X.Y.Z, the NP_VERSION of src/nightshade.h) pushed to Oliv3rmoon/Solanum also publishes:
+# job "release" puts the PPSA76526.zip and SHA256SUMS this run built on a GitHub release, the latest, which the
+# app's own update check (src/update_release.h) then offers. Nothing built anywhere else is ever attached, and a
+# release that already has a ZIP is never changed.
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Download the results from the run's page, under Artifacts:
-#   PPSA99010    PPSA99010.zip, the same zip the releases carry
+#   PPSA76526    PPSA76526.zip, the same zip the releases carry
 #   release      it and SHA256SUMS: what a release publishes
 
-name: Build Dulcamara
+name: Build Solanum
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
       attestations: write
     env:
       CCACHE_DIR: ${{ github.workspace }}/.deps/ccache
-      TITLE_ID: PPSA99010
+      TITLE_ID: PPSA76526
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -60,46 +60,38 @@ jobs:
           print(f"{tag}: NP_VERSION {version}, contentVersion {content}")
           PY
 
-      # EasyRPG Player (with libretro-common inside it), liblcf and inih: the core and what it is built from.
-      - name: Fetch submodules
-        run: git submodule update --init --recursive --depth=1
-
       - name: Install toolchain
         run: |
           sudo apt-get update
           sudo apt-get install --yes clang-18 lld-18 llvm-18 libclang-rt-18-dev make ninja-build ccache cmake \
-            pkg-config tar unzip wget zip python3 python3-venv zstd \
-            libfmt-dev libpng-dev zlib1g-dev libfreetype-dev libharfbuzz-dev libvorbis-dev libmpg123-dev \
-            libpixman-1-dev
+            pkg-config tar unzip wget zip python3 python3-venv zstd
 
-      - name: Restore downloaded SDK, libraries and test games
+      - name: Restore downloaded SDK and libraries
         uses: actions/cache@v4
         with:
           path: |
             .deps/native
             .deps/pacbrew
             .deps/lapy
-            .deps/pixman
-            .deps/testgame
-          key: deps-${{ runner.os }}-${{ hashFiles('tools/setup-*-dependencies.sh', 'tools/build-lapy-helper.py', 'tools/fetch-radv.sh', 'tools/fetch-testgame.sh', 'tools/build-easyrpg.sh') }}
+          key: deps-${{ runner.os }}-${{ hashFiles('tools/setup-*-dependencies.sh', 'tools/build-lapy-helper.py', 'tools/fetch-radv.sh') }}
 
-      # The core for the PS5 is rebuilt only when its sources, its patch or its build script change: its build
-      # stamp (build/easyrpg-ps5/.stamp) says which it was built from.
-      - name: Note the core's sources
-        run: git submodule status --recursive > build-core-sources.txt
-      - name: Restore the PS5 core
+      # Frame generation for the Vulkan screen is rebuilt only when its sources or its build script change: its
+      # build stamp (build/framegen-ps5/.stamp) says which it was built from.
+      - name: Restore frame generation
         uses: actions/cache@v4
         with:
-          path: build/easyrpg-ps5
-          key: easyrpg-ps5-${{ hashFiles('build-core-sources.txt', 'tools/build-easyrpg.sh', 'tools/patches/*', 'tooling/prospero-clang18') }}
+          path: build/framegen-ps5
+          key: framegen-ps5-${{ hashFiles('third_party/framegen/**', 'src/platform/vk/fg_bridge.h', 'tools/build-framegen.sh', 'tooling/prospero-clang18') }}
 
-      # On the build machine: the update's release decision, the library's game detection, and EasyRPG Player's
-      # core (the same revisions and patch as the PS5's) run headless on EasyRPG's TestGame.
+      # On the build machine: the catalog, the release's file, checksums (a download that isn't the release's is
+      # never unpacked), resuming, where an app is, the launch payload's conversation, the Konami code and the
+      # random tips and eggs (tests/store_check.c); the install helper's whole conversation
+      # (tests/helper_check.cpp); and Solanum's own update's release decision.
       - name: Host checks
         env:
           CC: clang-18
           CXX: clang++-18
-        run: python3 -m unittest tests.test_update_release tests.test_library tests.test_core -v
+        run: python3 -m unittest tests.test_store tests.test_update_release -v
 
       - name: Build
         env:
@@ -107,16 +99,17 @@ jobs:
         run: make
 
       - name: Check system module imports
-        run: python3 tools/check-imports.py dist/PPSA99010/eboot.bin
+        run: python3 tools/check-imports.py dist/PPSA76526/eboot.bin
 
-      # The same PPSA99010.zip that tools/make_release.py packs for a release.
-      - name: Pack PPSA99010.zip
+      # The same PPSA76526.zip that tools/make_release.py packs for a release.
+      - name: Pack PPSA76526.zip
         run: python3 tools/make_release.py --skip-build
 
-      # What the update and Nightshade's Settings > Apps unpack: the app folder, this title at this version.
-      - name: Check PPSA99010.zip
+      # What Solanum's own update unpacks, and what goes in /data/homebrew: the app folder, this title at this
+      # version, with the install helper and the launch payload beside eboot.bin.
+      - name: Check PPSA76526.zip
         run: |
-          python3 - PPSA99010.zip "$TITLE_ID" <<'PY'
+          python3 - PPSA76526.zip "$TITLE_ID" <<'PY'
           import json, re, sys, zipfile
           path, title = sys.argv[1:3]
           version = re.search(r'#define\s+NP_VERSION\s+"([^"]+)"', open("src/nightshade.h").read()).group(1)
@@ -129,41 +122,46 @@ jobs:
               if outside:
                   raise SystemExit(f"ZIP check failed: entries outside {title}/: {outside[:5]}")
               for needed in ("eboot.bin", "sce_sys/param.json", "sce_sys/icon0.png", "sce_sys/pic0.dds",
-                             "sce_sys/pic1.dds", "licenses/LICENSE-EasyRPG-Player.txt", "licenses/LICENSE-liblcf.txt",
-                             "licenses/LICENSE-pixman.txt", "licenses/LICENSE-inih.txt", "licenses/THIRD-PARTY.txt"):
+                             "sce_sys/pic1.dds", "self-updater.elf", "app-launch.elf", "lapy.elf",
+                             "licenses/LICENSE-Solanum.txt", "licenses/LICENSE-miniz.txt",
+                             "licenses/THIRD-PARTY.txt", "licenses/Lapy-MIT.txt"):
                   if f"{title}/{needed}" not in names:
                       raise SystemExit(f"ZIP check failed: {title}/{needed} is missing")
-              # no game files of any kind: players copy their own
-              games = sorted(n for n in names if re.search(r"(?i)rpg_rt\.(ldb|lmt|ini)$|\.(lmu|lsd|easyrpg)$", n))
+              # a store of open-source homebrew: no game files or packages of any kind
+              games = sorted(n for n in names if re.search(r"(?i)\.(nsp|nsz|xci|xcz|pkg|ffpkg|ffpfsc|iso|cue|chd|pbp|cso|exfat)$", n))
               if games:
-                  raise SystemExit(f"ZIP check failed: game files in the package: {games[:5]}")
+                  raise SystemExit(f"ZIP check failed: game or package files in the package: {games[:5]}")
               param = json.loads(archive.read(f"{title}/sce_sys/param.json"))
               name = param["localizedParameters"]["en-US"]["titleName"]
-              if param["titleId"] != title or param["contentVersion"] != content or name != "Dulcamara":
+              if param["titleId"] != title or param["contentVersion"] != content or name != "Solanum":
                   raise SystemExit(f"ZIP check failed: param.json is {param['titleId']} {param['contentVersion']} {name!r}")
+              for payload in ("self-updater.elf", "app-launch.elf"):
+                  data = archive.read(f"{title}/{payload}")
+                  if data[:4] != b"\x7fELF":
+                      raise SystemExit(f"ZIP check failed: {payload} is not an ELF")
               print(f"{len(names)} entries; {title} {content} {name!r}")
           PY
 
       - name: Write SHA256SUMS
         run: |
           mkdir -p release
-          cp PPSA99010.zip release/
-          (cd release && sha256sum PPSA99010.zip > SHA256SUMS && cat SHA256SUMS)
+          cp PPSA76526.zip release/
+          (cd release && sha256sum PPSA76526.zip > SHA256SUMS && cat SHA256SUMS)
 
       # Signed provenance: this file was built by this workflow from this commit. Anyone can check a downloaded
-      # copy with `gh attestation verify PPSA99010.zip -R Oliv3rmoon/Dulcamara`. Not for pull requests
+      # copy with `gh attestation verify PPSA76526.zip -R Oliv3rmoon/Solanum`. Not for pull requests
       # (a fork's run cannot sign), and not in a private repository (the plan does not include it).
       - name: Attest the release files
         if: github.event_name != 'pull_request' && !github.event.repository.private
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: release/PPSA99010.zip
+          subject-path: release/PPSA76526.zip
 
-      - name: Upload PPSA99010.zip
+      - name: Upload PPSA76526.zip
         uses: actions/upload-artifact@v4
         with:
-          name: PPSA99010
-          path: PPSA99010.zip
+          name: PPSA76526
+          path: PPSA76526.zip
           if-no-files-found: error
 
       - name: Upload the release files
@@ -171,7 +169,7 @@ jobs:
         with:
           name: release
           path: |
-            release/PPSA99010.zip
+            release/PPSA76526.zip
             release/SHA256SUMS
           if-no-files-found: error
           compression-level: 0
@@ -202,8 +200,8 @@ jobs:
           set -euo pipefail
           cd release
           mapfile -d '' files < <(find . -type f -print0)
-          if (( ${#files[@]} != 2 )) || [[ ! -f PPSA99010.zip || ! -f SHA256SUMS ]]; then
-            echo "Expected exactly PPSA99010.zip and SHA256SUMS in the artifact." >&2
+          if (( ${#files[@]} != 2 )) || [[ ! -f PPSA76526.zip || ! -f SHA256SUMS ]]; then
+            echo "Expected exactly PPSA76526.zip and SHA256SUMS in the artifact." >&2
             exit 1
           fi
           sha256sum -c SHA256SUMS
@@ -214,21 +212,21 @@ jobs:
         run: |
           set -euo pipefail
           TAG=$GITHUB_REF_NAME
-          assets=(release/PPSA99010.zip release/SHA256SUMS)
+          assets=(release/PPSA76526.zip release/SHA256SUMS)
           notes="docs/releases/$TAG.md"
           # The files of a release come from the run of its tag, once. A release without a ZIP (notes
           # written in advance, or a draft) gets them and keeps its title and notes; one that already has
           # a ZIP is never touched, because players may have checked that ZIP against its SHA256SUMS.
           if names=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null); then
-            if grep -qx 'PPSA99010.zip' <<< "$names"; then
-              echo "::warning title=Release files not from this run::The release $TAG already has PPSA99010.zip; it was not replaced."
+            if grep -qx 'PPSA76526.zip' <<< "$names"; then
+              echo "::warning title=Release files not from this run::The release $TAG already has PPSA76526.zip; it was not replaced."
             else
               gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY"
             fi
           elif [[ -f $notes ]]; then
             gh release create "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
-              --title "Dulcamara $TAG" --notes-file "$notes"
+              --title "Solanum $TAG" --notes-file "$notes"
           else
             gh release create "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
-              --title "Dulcamara $TAG" --generate-notes
+              --title "Solanum $TAG" --generate-notes
           fi

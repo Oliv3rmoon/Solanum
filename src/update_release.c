@@ -1,5 +1,5 @@
 /*
- * Dulcamara - which GitHub release the in-app update offers, and the checks it passes.
+ * Solanum - which GitHub release Solanum's own update offers, and the checks it passes (Dulcamara's).
  * SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
@@ -9,7 +9,7 @@
  */
 #include "update_release.h"
 
-#include "../examples/self-update/self_update_sha256.h"
+#include "../kit/self_update_sha256.h"
 
 #include <stdio.h>
 #include <string.h>

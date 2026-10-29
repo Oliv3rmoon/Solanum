@@ -1,12 +1,12 @@
 /*
- * Dulcamara - updates from Oliv3rmoon/Dulcamara's GitHub releases (update_release.h), as
- * Mandrake (and SwanStationPS5 before it) updates itself.
+ * Solanum - its own updates from Oliv3rmoon/Solanum's GitHub releases (update_release.h), as Dulcamara and
+ * Mandrake (and SwanStationPS5 before them) update themselves.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Checks api.github.com for the repository's latest release (not a draft or a pre-release);
- * update_release.c decides whether it is offered: a newer X.Y.Z tag carrying PPSA99010.zip and
+ * update_release.c decides whether it is offered: a newer X.Y.Z tag carrying PPSA76526.zip and
  * SHA256SUMS, both this repository's own files. Installing downloads the ZIP, checks it against
- * the SHA-256 that SHA256SUMS gives it, and writes the PPSA99010 folder inside it over the
+ * the SHA-256 that SHA256SUMS gives it, and writes the PPSA76526 folder inside it over the
  * installed app. Each file goes to <name>.new and is renamed into place: a running eboot.bin
  * can't be overwritten, but it can be replaced by name, and the new one runs from the next start.
  */
@@ -127,7 +127,7 @@ void update_check(void)
 }
 
 /* Where the running app is stored. The update has to land there, whether it's in /data/homebrew or on an
- * extended or USB drive (/mnt/ext1/homebrew/PPSA99010 ...). The mount the app runs from (/app0, or the
+ * extended or USB drive (/mnt/ext1/homebrew/PPSA76526 ...). The mount the app runs from (/app0, or the
  * ShadowMountPlus one) is matched to a folder on disk by its eboot.bin: same size and modification time. */
 static bool same_eboot(const char *dir, const struct stat *running)
 {
@@ -199,7 +199,7 @@ static int install_thread(void *unused)
 {
     (void)unused;
     char zip[NP_PATH_MAX];
-    path_join(zip, sizeof(zip), app.paths.root, "cache/update.zip");
+    path_join(zip, sizeof(zip), app.paths.root, "cache/solanum-update.zip");
     char dir[NP_PATH_MAX];
     path_join(dir, sizeof(dir), app.paths.root, "cache");
     make_dirs(dir);
@@ -232,7 +232,7 @@ static int install_thread(void *unused)
         mz_zip_archive_file_stat st;
         if (!mz_zip_reader_file_stat(&archive, i, &st) || st.m_is_directory)
             continue;
-        /* PPSA99010/<path> -> <where the app is stored>/<path> */
+        /* PPSA76526/<path> -> <where the app is stored>/<path> */
         const char *inside = strstr(st.m_filename, NP_TITLE_ID "/");
         if (!inside || strstr(inside, ".."))
             continue;
@@ -262,7 +262,7 @@ static int install_thread(void *unused)
         fail(tr("Couldn't write the new files (is /data unlocked?)"));
         return 0;
     }
-    snprintf(message, sizeof(message), tr("Dulcamara %s is installed: restart Dulcamara to use it"), version);
+    snprintf(message, sizeof(message), tr("Solanum %s is installed: restart Solanum to use it"), version);
     np_log("update: installed %s (%d files)", version, files);
     SDL_AtomicSet(&state, UPDATE_INSTALLED);
     return 0;

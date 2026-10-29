@@ -1,4 +1,4 @@
-# Dulcamara - Linux/WSL build entry points (Mandrake's, on ps5-native-app-boilerplate).
+# Solanum - Linux/WSL build entry points (Dulcamara's and Mandrake's, on ps5-native-app-boilerplate).
 # Copyright (C) 2026 BlackBearReloaded
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,8 +7,7 @@ SHELL := /bin/bash
 
 -include .env
 
-# The screen through Vulkan (the linked RADV driver), as Mandrake: the shelf, the menus and the game's
-# shaders are drawn by the GPU.
+# The screen through Vulkan (the linked RADV driver), as Mandrake and Dulcamara: the store is drawn by the GPU.
 APP_VULKAN ?= 1
 ifeq ($(APP_VULKAN),1)
 APP_DEFINITIONS ?= NP_HAVE_CURL=1 NP_VULKAN=1
@@ -16,16 +15,14 @@ NP_VULKAN_INCLUDE := .deps/native/radv-release/include
 else
 APP_DEFINITIONS ?= NP_HAVE_CURL=1
 endif
-# The cores (src/core/cores.h): EasyRPG Player, built by tools/build-easyrpg.sh with its API renamed easyrpg_retro_*.
-NP_EASYRPG := build/easyrpg-ps5/libeasyrpg.a
-NP_LIBRETRO_INCLUDE := third_party/easyrpg-player/builds/libretro/libretro-common/include
-APP_INCLUDE_PATHS ?= $(NP_LIBRETRO_INCLUDE) third_party/stb examples/update-check $(NP_VULKAN_INCLUDE)
+# The self-update kit (kit/, Nightshade's copy of the boilerplate's): the store's downloads, installs and opening.
+APP_INCLUDE_PATHS ?= third_party/stb kit $(NP_VULKAN_INCLUDE)
 ifeq ($(APP_VULKAN),1)
 # Frame generation (AMD FSR 3's frame interpolation, from PS5SX2), built by tools/build-framegen.sh: the Vulkan
-# screen (src/platform/vk) is Mandrake's and links it.
+# screen (src/platform/vk) is Mandrake's and links it (Solanum never turns it on).
 NP_FRAMEGEN := build/framegen-ps5/libframegen.a
 endif
-APP_STATIC_ARCHIVES ?= $(NP_EASYRPG) $(NP_FRAMEGEN)
+APP_STATIC_ARCHIVES ?= $(NP_FRAMEGEN)
 APP_RUNTIME_MODULES ?=
 # fcntl: console_curl. The allocator family: ps5_heap.c (the C heap is too small).
 APP_WRAP_SYMBOLS ?= fcntl malloc free calloc realloc reallocf memalign posix_memalign aligned_alloc malloc_usable_size
@@ -33,14 +30,16 @@ APP_SOURCE_DIR ?=
 APP_PARAM ?=
 APP_SCE_SYS ?=
 APP_ASSETS ?= assets
-APP_ROOT_FILES ?=
-# Lapy elevation: needed to list /data/dulcamara under ShadowMountPlus.
+# The store's two payloads, sent to the console's payload loader: the install helper (helper/self_update_helper,
+# Nightshade's) and the launch payload that opens an app once Solanum has closed (helper/app_launch, Nightshade's).
+SOLANUM_HELPER := build/self-update/self-updater.elf
+SOLANUM_LAUNCH := build/app-launch/app-launch.elf
+APP_ROOT_FILES ?= $(SOLANUM_HELPER) $(SOLANUM_LAUNCH)
+# Lapy elevation: needed to list /data/homebrew (the installed apps) and /data/solanum under ShadowMountPlus.
 APP_LAPY_HELPER ?= 1
 PACBREW_PACKAGES ?= sdl2 libcurl
 PACBREW_INCLUDE_PATHS ?=
-# The library reads game titles in Shift-JIS and the Windows code pages (src/rpgmaker.c): GNU libiconv. The core
-# has its own copy, local to its archive.
-PACBREW_STATIC_ARCHIVES ?= lib/libiconv.a
+PACBREW_STATIC_ARCHIVES ?=
 PS5_HOST ?=
 FTP_PORT ?= 2121
 DEPLOY_FORMAT ?= folder
@@ -92,14 +91,12 @@ doctor:
 
 test: host-checks test-unit test-integration test-elevation test-update-check test-self-update
 
-# Dulcamara's own host checks: the library's game detection (tests/test_library.py) and EasyRPG Player's
-# core run headless on EasyRPG's TestGame (tests/test_core.py). Neither needs the PS5 SDK.
-.PHONY: host-checks test-library test-core
-host-checks: test-library test-core
-test-library:
-	@python3 -m unittest tests.test_library -v
-test-core:
-	@python3 -m unittest tests.test_core -v
+# Solanum's own host checks (tests/test_store.py): the catalog, the release's file, checksums, resuming, where an
+# app is, the launch payload's conversation, the hidden ones, and the install helper's whole conversation; and its
+# own update's release decision (tests/test_update_release.py). None needs the PS5 SDK.
+.PHONY: host-checks
+host-checks:
+	@python3 -m unittest tests.test_store tests.test_update_release -v
 
 .PHONY: test-elevation
 test-elevation:
@@ -168,21 +165,34 @@ $(RUNTIME): $(RUNTIME_INPUTS)
 	@printf '%s\n' '==> [libc] Generating the missing or outdated runtime'
 	@bash tools/rebuild-libc.sh
 
-app: $(RUNTIME) radv core
+app: $(RUNTIME) radv core payloads
 	@printf '%s\n' '==> [app] Compiling, linking, signing, and assembling the app folder'
 	@bash tools/build.sh Folder
 
-ffpkg: $(RUNTIME) radv core
+ffpkg: $(RUNTIME) radv core payloads
 	@printf '%s\n' '==> [ffpkg] Building the app folder and UFS2 image'
 	@bash tools/build.sh Ffpkg
 
-ffpfsc: $(RUNTIME) radv core
+ffpfsc: $(RUNTIME) radv core payloads
 	@printf '%s\n' '==> [ffpfsc] Building the app folder and compressed image'
 	@bash tools/build.sh Ffpfsc
 
-packages: $(RUNTIME)
+packages: $(RUNTIME) radv core payloads
 	@printf '%s\n' '==> [packages] Building the app folder and both package formats'
 	@bash tools/build.sh All
+
+# The install helper and the launch payload, ordinary payloads for the console's loader, built with the payload
+# SDK as the boilerplate's self-update helper is; each must end at its section table (tools/validate-loader-elf.py).
+.PHONY: payloads
+payloads:
+	@printf '%s\n' '==> [payloads] The install helper and the launch payload'
+	@bash tools/setup-native-dependencies.sh >/dev/null
+	@$(MAKE) --no-print-directory -s -C helper/self_update_helper \
+		PS5_PAYLOAD_SDK="$(CURDIR)/.deps/native/ps5-payload-sdk" OUTPUT="$(CURDIR)/$(SOLANUM_HELPER)"
+	@python3 tools/validate-loader-elf.py "$(SOLANUM_HELPER)"
+	@$(MAKE) --no-print-directory -s -C helper/app_launch \
+		PS5_PAYLOAD_SDK="$(CURDIR)/.deps/native/ps5-payload-sdk" OUTPUT="$(CURDIR)/$(SOLANUM_LAUNCH)"
+	@python3 tools/validate-loader-elf.py "$(SOLANUM_LAUNCH)"
 
 sandbox-elevation-ffpfsc: $(RUNTIME)
 	@printf '%s\n' '==> [sandbox-elevation] Building the embedded upstream-Lapy proof image'
@@ -262,7 +272,7 @@ sync-version:
 	@python3 tools/make_release.py --sync-version
 
 .PHONY: core
-# The core is rebuilt by its own Makefile; this only forwards to it.
+# Frame generation for the Vulkan screen (tools/build-framegen.sh), rebuilt only when its sources change.
 .PHONY: radv
 # v2: the RADV driver build and the SDK platform layer (tools/fetch-radv.sh).
 radv:
@@ -271,7 +281,6 @@ ifeq ($(APP_VULKAN),1)
 endif
 
 core:
-	@bash tools/build-easyrpg.sh
 ifeq ($(APP_VULKAN),1)
 	@bash tools/build-framegen.sh
 endif
@@ -283,10 +292,10 @@ desktop:
 
 help:
 	@printf '%s\n' \
-	  'Dulcamara:' \
-	  'make                 Build the PS5 app folder dist/PPSA99010 (the cores + the frontend)' \
-	  'make host-checks     Game detection tests and EasyRPG Player run headless on TestGame' \
-	  'make desktop         The app for this computer (SDL2 window), for the interface' \
+	  'Solanum:' \
+	  'make                 Build the PS5 app folder dist/PPSA76526 (the store, its helper and launch payload)' \
+	  'make host-checks     The store'"'"'s and its own update'"'"'s host checks (tests/test_store.py, test_update_release.py)' \
+	  'make desktop         The app for this computer (SDL2 window, the store from tests/fixtures), for the interface' \
 	  'make deploy PS5_HOST=<ip>  Build and upload to /data/homebrew over FTP' \
 	  '' \
 	  'Boilerplate:' \

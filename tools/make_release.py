@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Compiles Dulcamara and packs the release asset, PPSA99010.zip, in the project root.
+"""Compiles Solanum and packs the release asset, PPSA76526.zip, in the project root.
 
-    python3 tools/make_release.py                 # make, then PPSA99010.zip
+    python3 tools/make_release.py                 # make, then PPSA76526.zip
     python3 tools/make_release.py --skip-build    # only pack what dist/ already holds
     python3 tools/make_release.py --jobs 12 --no-nice
     python3 tools/make_release.py --ip 192.168.1.90 [--port 2121]   # also deploys to the PS5 over FTP
 
-The zip holds just the app folder, PPSA99010/: what the in-app updater installs, and what you copy to
+The zip holds just the app folder, PPSA76526/: what the in-app updater installs, and what you copy to
 /data/homebrew. The release tag is the version from NP_VERSION in src/nightshade.h, without a "v" (0.1.0).
-(From Mandrake's, which is SwanStationPS5's.)
+(Dulcamara's, from Mandrake's, which is SwanStationPS5's.)
 
 SPDX-License-Identifier: GPL-3.0-or-later
 """
@@ -22,7 +22,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-APP = "PPSA99010"
+APP = "PPSA76526"
 
 
 def read_version():
@@ -98,7 +98,7 @@ def main():
     args = ap.parse_args()
 
     version = read_version()
-    print(f"Dulcamara {version}")
+    print(f"Solanum {version}")
     if args.sync_version:
         sync_content_version(version)
         return
@@ -113,10 +113,10 @@ def main():
         deploy(args.ip, args.port)
     # A release is published by the Build workflow from a version tag, with SHA256SUMS
     # (.github/workflows/build.yml); a ZIP made here is for testing.
-    print(f"    publish: push a signed tag {version} to Oliv3rmoon/Dulcamara; the Build workflow "
-          f"publishes {out.name} and SHA256SUMS as \"Dulcamara {version}\"")
+    print(f"    publish: push a signed tag {version} to Oliv3rmoon/Solanum; the Build workflow "
+          f"publishes {out.name} and SHA256SUMS as \"Solanum {version}\"")
     if args.ip:
-        print(f"    live log (open the app first): nc {args.ip} 3232 | grep --line-buffered Dulcamara")
+        print(f"    live log (open the app first): nc {args.ip} 3232 | grep --line-buffered Solanum")
 
 
 main()

@@ -1,18 +1,18 @@
 /*
- * Dulcamara - RPG Maker 2000 / 2003 games on the PS5, on EasyRPG Player's libretro core.
+ * Solanum - a store for open-source PS5 homebrew, a Nightshade app.
+ * SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Dulcamara, a Nightshade app. The app: start-up, the main loop, the game screen, and what the screens share
- * (app.h). Its platform layer, its Vulkan screen and shaders, its interface primitives and its update check come
- * from Mandrake, formerly Nightshade Station (darkxex's SwanStationPS5 on BlackBearReloaded's
- * ps5-native-app-boilerplate).
+ * Named after the genus at the heart of the nightshade family. It installs and updates the apps of the open
+ * catalog at Oliv3rmoon/Solanum-Catalog from their own GitHub releases, each checked against its checksum file,
+ * and opens them. The app: start-up, the main loop, and what the screens share (app.h). Its platform layer, its
+ * Vulkan screen, its interface primitives and its own update come from Dulcamara, which has them from Mandrake
+ * (formerly Nightshade Station: darkxex's SwanStationPS5 on BlackBearReloaded's ps5-native-app-boilerplate); its
+ * installs and its Open button are Nightshade's Settings > Apps (store.h).
  */
 #include "app.h"
 
 #include "config.h"
-#include "core/cores.h"
-#include "core/host.h"
-#include "covers.h"
 #include "i18n.h"
 #include "platform/platform.h"
 #include "platform/ps5_crash.h"
@@ -30,15 +30,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define AUDIO_RATE 48000 /* EasyRPG's, and the interface sounds' */
+#define AUDIO_RATE 48000 /* the interface sounds' */
 
-App app = {.game = -1, .dt = 1.0f / 60.0f};
+App app = {.dt = 1.0f / 60.0f, .page_app = -1, .tip = -1, .last_egg = -1};
 
 /* ---------------------------------------------------------------- notices */
 
-static char toast[200];
+static char toast[400];
 static uint64_t toast_until, toast_length = 2500000;
-static char toast_queue[4][200];
+static char toast_queue[4][400];
 static uint64_t toast_queue_us[4];
 static int toast_queued;
 
@@ -83,21 +83,26 @@ static void toast_render(void)
         return;
     const float shown = (float)(toast_length - (toast_until - now)) / 1e6f, left = (float)(toast_until - now) / 1e6f;
     const float a = left < 0.3f ? left / 0.3f : 1.0f, rise = shown < 0.15f ? (1.0f - shown / 0.15f) * 24.0f : 0.0f;
-    const float size = 26, w = text_width(size, FONT_REGULAR, toast) + 110, h = 64;
-    const float x = (plat_width() - w) * 0.5f, y = plat_height() - 190 + rise;
+    const float size = 26;
+    float w = text_width(size, FONT_REGULAR, toast) + 110;
+    if (w > plat_width() - 2 * TH_MARGIN)
+        w = plat_width() - 2 * TH_MARGIN;
+    const float h = 64, x = (plat_width() - w) * 0.5f, y = plat_height() - 190 + rise;
     draw_rrect(x, y, w, h, 32, argb_alpha(TH_PILL_A(0xf0), a));
+    draw_rrect_outline(x, y, w, h, 32, 2, argb_alpha(TH_DIVIDER, a));
     icon_draw(ICON_INFO_CIRCLE, x + 22, y + 18, 28, argb_alpha(TH_FOCUS, a));
-    text_draw(x + 62, y + 17, size, FONT_REGULAR, argb_alpha(TH_TEXT, a), ALIGN_LEFT, toast);
+    text_draw_fit(x + 62, y + 17, size, FONT_REGULAR, argb_alpha(TH_TEXT, a), ALIGN_LEFT, w - 90, toast);
 }
 
 /* ---------------------------------------------------------------- the message box */
 
-static char box_text[600];
+static char box_text[800];
 static bool box_open;
 static float box_t;
 
 void app_message_box(const char *message)
 {
+    np_log("message: %s", message);
     str_copy(box_text, sizeof(box_text), tr(message));
     box_open = true;
     box_t = 0.0f;
@@ -116,13 +121,15 @@ static bool message_box_input(uint32_t *pressed)
     return true;
 }
 
-/* Word-wrapped text, centred, line by line; returns the height used. */
-static float draw_wrapped(const char *m, float cx, float y, float width, float size, uint32_t argb, float bottom)
+int app_draw_wrapped(const char *m, float x, float y, float width, float size, int weight, uint32_t argb, int align,
+                     float bottom, int skip, int *total)
 {
-    char line[256];
-    const float top = y;
-    while (*m && y < bottom)
+    char line[512];
+    int lines = 0, drawn = 0;
+    const float step = size * 1.42f;
+    while (*m)
     {
+        /* the longest run of whole words that fits; a word longer than the width is cut */
         size_t best = 0;
         for (size_t i = 0;;)
         {
@@ -132,24 +139,34 @@ static float draw_wrapped(const char *m, float cx, float y, float width, float s
             const size_t n = j < sizeof(line) - 1 ? j : sizeof(line) - 1;
             memcpy(line, m, n);
             line[n] = '\0';
-            if (best > 0 && text_width(size, FONT_REGULAR, line) > width)
+            if (best > 0 && text_width(size, weight, line) > width)
                 break;
             best = n;
-            if (!m[j] || m[j] == '\n')
+            if (!m[j] || m[j] == '\n' || n == sizeof(line) - 1)
                 break;
             i = j + 1;
         }
         memcpy(line, m, best);
         line[best] = '\0';
-        text_draw(cx, y, size, FONT_REGULAR, argb, ALIGN_CENTER, line);
-        y += size * 1.45f;
+        if (lines >= skip && y + step <= bottom + 1)
+        {
+            const float lx = align == ALIGN_CENTER ? x + width * 0.5f : align == ALIGN_RIGHT ? x + width : x;
+            text_draw_fit(lx, y, size, weight, argb, align, width, line);
+            y += step;
+            ++drawn;
+        }
+        ++lines;
         m += best;
         while (*m == ' ')
             ++m;
         if (*m == '\n')
             ++m;
+        if (!total && y + step > bottom + 1)
+            break;
     }
-    return y - top;
+    if (total)
+        *total = lines;
+    return drawn;
 }
 
 static void message_box_draw(void)
@@ -157,13 +174,14 @@ static void message_box_draw(void)
     if (!box_open)
         return;
     box_t = fminf(box_t + app.dt * 8.0f, 1.0f);
-    const float w = 860, h = 520, pad = 52, size = 28;
+    const float w = 960, h = 560, pad = 52, size = 28;
     const float x = (plat_width() - w) * 0.5f, y = (plat_height() - h) * 0.5f + (1.0f - box_t) * 24.0f;
     draw_rect(0, 0, (float)plat_width(), (float)plat_height(), argb_alpha(0xb0000000u, box_t));
     draw_rrect(x, y, w, h, TH_RADIUS, argb_alpha(TH_CARD_A(0xf8), box_t));
     draw_rect(x, y, w, 4, argb_alpha(TH_FOCUS, box_t));
     icon_draw(ICON_INFO_CIRCLE, x + (w - 56) * 0.5f, y + pad, 56, argb_alpha(TH_FOCUS, box_t));
-    draw_wrapped(box_text, x + w * 0.5f, y + pad + 84, w - 2 * pad, size, argb_alpha(TH_TEXT, box_t), y + h - 110);
+    app_draw_wrapped(box_text, x + pad, y + pad + 84, w - 2 * pad, size, FONT_REGULAR, argb_alpha(TH_TEXT, box_t),
+                     ALIGN_CENTER, y + h - 110, 0, NULL);
     const float hs = 26, gw = pad_glyph_width(GLYPH_CROSS, hs);
     const char *close = tr("Close");
     const float hw = gw + hs * 0.35f + text_width(hs, FONT_REGULAR, close);
@@ -182,6 +200,69 @@ void app_draw_hints(const int *glyphs, const char *const *labels, int count, con
         x += draw_hint(x, TH_HINT_Y, (enum PadGlyph)glyphs[i], tr(labels[i]), 26, TH_HINT);
     if (right)
         text_draw(plat_width() - TH_MARGIN, TH_HINT_Y, 26, FONT_REGULAR, TH_HINT, ALIGN_RIGHT, tr(right));
+}
+
+/* Nightshade's: near black, a low red glow rising from below, right of the middle, and a fainter one behind
+ * (Mandrake's BACKDROP_GLOW; Dulcamara's shelf). */
+void app_backdrop(void)
+{
+    enum
+    {
+        W = 960,
+        H = 540
+    };
+    static uint8_t *grey;
+    if (!grey)
+    {
+        grey = malloc((size_t)W * H);
+        if (!grey)
+        {
+            draw_rect(0, 0, (float)plat_width(), (float)plat_height(), TH_BG);
+            return;
+        }
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < W; ++x)
+            {
+                const float t = (float)y / (H - 1), u = (float)x / (W - 1);
+                const float gx = (u - 0.60f) / 0.55f, gy = (t - 1.04f) / 0.32f;
+                const float bx = (u - 0.5f) / 0.75f, by = (t - 0.46f) / 0.34f;
+                const float v = 0.035f + 0.30f * expf(-(gx * gx + gy * gy)) + 0.04f * expf(-(bx * bx + by * by));
+                grey[(size_t)y * W + x] = (uint8_t)(fminf(fmaxf(v, 0.0f), 1.0f) * 255.0f);
+            }
+        plat_backdrop_changed();
+    }
+    plat_draw_backdrop(grey, W, H, theme.backdrop_tint);
+}
+
+void app_next_tip(void)
+{
+    store_lock();
+    app.tip = apps_pick(store_catalog()->tip_count, app.tip, &app.random);
+    store_unlock();
+}
+
+const char *app_tip(void)
+{
+    const Catalog *catalog = store_catalog();
+    return app.tip >= 0 && app.tip < catalog->tip_count ? catalog->tips[app.tip] : "";
+}
+
+void app_show_egg(void)
+{
+    const Catalog *catalog = store_catalog();
+    app.last_egg = apps_pick(catalog->egg_count, app.last_egg, &app.random);
+    if (app.last_egg >= 0)
+        app_toast_for(catalog->eggs[app.last_egg], 4.5f); /* exactly as the catalog has it */
+}
+
+void app_format_size(uint64_t bytes, char *out, size_t size)
+{
+    if (bytes >= 1000ull * 1000 * 1000)
+        snprintf(out, size, "%.1f GB", (double)bytes / 1e9);
+    else if (bytes >= 1000ull * 1000)
+        snprintf(out, size, "%.1f MB", (double)bytes / 1e6);
+    else
+        snprintf(out, size, "%llu KB", (unsigned long long)((bytes + 999) / 1000));
 }
 
 int app_nav_pad(void)
@@ -208,9 +289,14 @@ static uint32_t nav_pressed(const PadState *pads)
         held |= BIT(BTN_LEFT);
     if (p->lx > 20000)
         held |= BIT(BTN_RIGHT);
+    /* the right stick scrolls the release notes, as L2 / R2 do */
+    if (p->ry < -20000)
+        held |= BIT(BTN_L2);
+    if (p->ry > 20000)
+        held |= BIT(BTN_R2);
     uint32_t pressed = held & ~previous;
-    const uint32_t dirs =
-        BIT(BTN_UP) | BIT(BTN_DOWN) | BIT(BTN_LEFT) | BIT(BTN_RIGHT) | BIT(BTN_L1) | BIT(BTN_R1);
+    const uint32_t dirs = BIT(BTN_UP) | BIT(BTN_DOWN) | BIT(BTN_LEFT) | BIT(BTN_RIGHT) | BIT(BTN_L1) | BIT(BTN_R1) |
+                          BIT(BTN_L2) | BIT(BTN_R2);
     const uint64_t now = plat_ticks_us();
     if (pressed & dirs)
     {
@@ -230,7 +316,6 @@ static uint32_t nav_pressed(const PadState *pads)
 void app_apply_settings(void)
 {
     sfx_configure(app.settings.ui_sound, (app.settings.ui_volume + 1) * 25);
-    host_set_volume(app.settings.game_volume);
 }
 
 void app_save_settings(void)
@@ -239,169 +324,126 @@ void app_save_settings(void)
         np_log("settings: could not write %s", app.paths.config);
 }
 
-void app_open_settings(enum Screen back_to)
+void app_open_settings(void)
 {
-    app.settings_return = back_to;
     app.screen = SCREEN_SETTINGS;
     settings_opened();
 }
 
-void app_rescan(void)
+void app_request(int request, int index)
 {
-    library_scan(&app.library, app.paths.games);
-    library_load_played(&app.library, app.paths.played);
-    library_sort(&app.library, app.settings.sort_mode);
-    text_want_clear();
-    for (int i = 0; i < app.library.count; ++i)
-        text_want(app.library.games[i].title); /* Japanese titles: their characters into the atlases */
-    covers_start(&app.library);
-    np_log("library: %d game(s) in %s", app.library.count, app.paths.games);
-    shelf_library_changed();
+    app.request = request;
+    app.request_app = index;
 }
 
-/* ---------------------------------------------------------------- the game */
+/* ---------------------------------------------------------------- what the screens asked for */
 
-void app_start_game(int index)
+static void carry_out(void)
 {
-    if (index < 0 || index >= app.library.count)
-        return;
-    Game *g = &app.library.games[index];
-    char error[256];
-    np_log("game: starting %s (%s)", g->title, g->path);
-    ps5_crash_step("loading a game");
-    if (!host_load(g, app.paths.root, error, sizeof(error)))
+    const int request = app.request, index = app.request_app;
+    char reason[256], text[400];
+    app.request = REQUEST_NONE;
+    switch (request)
     {
-        app_message_box(error);
-        plat_audio_open(AUDIO_RATE);
-        return;
-    }
-    host_set_volume(app.settings.game_volume);
-    app.game = index;
-    app.fast_forward = app.fast_latched = false;
-    app.screen = SCREEN_GAME;
-    library_mark_played(&app.library, index, app.paths.played);
-    app.settings.last_game = index;
-    app_save_settings();
-}
-
-void app_stop_game(void)
-{
-    if (app.game < 0)
-        return;
-    host_unload();
-    plat_audio_open(AUDIO_RATE);
-    plat_audio_clear();
-    np_log("game: back to the library");
-    app.game = -1;
-    app.fast_forward = app.fast_latched = false;
-    app.screen = SCREEN_LIBRARY;
-    shelf_open();
-}
-
-void app_draw_game(uint8_t dim)
-{
-    if (app.game < 0)
-        return;
-    int w, h, format;
-    size_t pitch;
-    bool fresh;
-    const void *pixels = host_frame(&w, &h, &pitch, &format, &fresh);
-    /* a shader reads the game's own pixels: no upscaling before it */
-    if (pixels && fresh)
-        plat_upload_game(pixels, w, h, pitch, format, app.settings.shader ? 1 : app.settings.upscale,
-                         app.settings.upscale_filter);
-    if (!pixels)
-        return;
-    const float aspect = app.settings.aspect == 1 ? 16.0f / 9.0f : host_aspect();
-    plat_draw_game(&app.settings, aspect, dim);
-}
-
-static const int FF_SPEEDS[] = {2, 3, 4, 6, 8};
-
-static void game_screen(PadState *pads, uint32_t pressed)
-{
-    const PadState *p = &pads[app_nav_pad()];
-    if (pressed & BIT(BTN_MENU))
+    case REQUEST_INSTALL:
+        if (!store_install(index, reason, sizeof(reason)))
+            app_message_box(reason);
+        else
+            app_next_tip();
+        break;
+    case REQUEST_CANCEL: store_cancel(); break;
+    case REQUEST_REFRESH:
+        app_next_tip();
+        store_refresh(true);
+        break;
+    case REQUEST_OPEN:
     {
-        menu_open();
-        app_draw_game(255);
+        store_lock();
+        char name[64];
+        str_copy(name, sizeof(name), index >= 0 && index < store_catalog()->app_count
+                                         ? store_catalog()->apps[index].name
+                                         : "the app");
+        store_unlock();
+        switch (store_open(index, reason, sizeof(reason)))
+        {
+        case OPEN_CLOSING:
+            /* the payload opens it once Solanum has closed: a moment to read why the screen goes */
+            snprintf(text, sizeof(text), tr("Opening %s..."), name);
+            app_toast_for(text, 3.0f);
+            app_save_settings();
+            app.quit_at = plat_ticks_us() + 900000;
+            break;
+        case OPEN_NOT_LISTED:
+            snprintf(text, sizeof(text),
+                     tr("The console doesn't list %s yet. The homebrew loader adds a new app after its next scan or "
+                        "a restart; then open it here or from the home screen."),
+                     name);
+            app_message_box(text);
+            break;
+        case OPEN_NO_LOADER:
+            app_message_box(tr("No payload loader took Solanum's launch payload. Is the HEN's ELF loader (port 9021) "
+                               "running? You can open the app from the home screen."));
+            break;
+        default:
+            snprintf(text, sizeof(text), tr("%s couldn't be opened: %s."), name, reason);
+            app_message_box(text);
+            break;
+        }
+        break;
+    }
+    default: break;
+    }
+}
+
+/* The install that ended this frame: said once, then forgotten so the next can begin. */
+static void job_ended(void)
+{
+    char text[600];
+    const StoreJob *job = &app.job;
+    if (job->app < 0 || (job->phase != JOB_INSTALLED && job->phase != JOB_FAILED && job->phase != JOB_CANCELLED))
         return;
-    }
-    /* R2: fast-forward, while held or turned on and off */
-    static bool r2_was;
-    const bool r2 = (p->buttons & BIT(BTN_R2)) || p->r2 > 160;
-    if (app.settings.ff_toggle)
+    store_lock();
+    char name[64];
+    str_copy(name, sizeof(name), job->app < store_catalog()->app_count ? store_catalog()->apps[job->app].name
+                                                                       : job->title);
+    store_unlock();
+    if (job->phase == JOB_INSTALLED)
     {
-        if (r2 && !r2_was)
-            app.fast_forward = app.fast_latched = !app.fast_forward;
+        if (job->fresh)
+            snprintf(text, sizeof(text),
+                     tr("%s %s is installed in %s. The homebrew loader lists it after its next scan or a restart."),
+                     name, job->version, job->folder[0] ? job->folder : "its folder");
+        else
+            snprintf(text, sizeof(text), tr("%s is updated to %s."), name, job->version);
+        app_toast_for(text, 5.0f);
     }
+    else if (job->phase == JOB_CANCELLED)
+        app_toast(tr("The install was cancelled. Nothing was changed."));
+    else if (job->mismatch)
+    {
+        snprintf(text, sizeof(text),
+                 tr("%s wasn't installed: the download doesn't match its release's checksum, so nothing was "
+                    "unpacked and nothing was changed. Try again; if it happens again, tell the app's author."),
+                 name);
+        app_message_box(text);
+    }
+    else if (job->no_loader)
+        app_message_box(tr("No payload loader took Solanum's install helper. Is the HEN's ELF loader (port 9021) "
+                           "running? Nothing was changed."));
     else
-        app.fast_forward = r2 || app.fast_latched;
-    r2_was = r2;
-    host_set_fast_forward(app.fast_forward);
-
-    PadState game_pad = *p;
-    game_pad.buttons &= ~(BIT(BTN_MENU) | BIT(BTN_R2));
-    host_set_input(&game_pad, &app.settings);
-
-    const int runs = app.fast_forward ? FF_SPEEDS[app.settings.ff_speed % 5] : 1;
-    /* The game's time: what passed since the last frame. On a 59.94 Hz screen that is a hair more than EasyRPG's
-     * 60 Hz step, which every 16 seconds would give one frame two steps and a stutter: within 2 % of a step, the
-     * step itself (the game runs 0.1 % slow; its sound plays at its own pace either way). */
-    double seconds = app.dt > 0.05f ? 0.05 : app.dt < 0.001f ? 1.0 / 60.0 : app.dt;
-    const double step = 1.0 / host_fps();
-    if (seconds > step * 0.98 && seconds < step * 1.02)
-        seconds = step;
-    host_run(runs, seconds);
-    host_feed_audio(0.07);
-
-    /* the game's frames a second, for Show FPS */
-    static uint64_t window_start;
-    static int frames;
-    const uint64_t now = plat_ticks_us();
-    frames += runs;
-    if (now - window_start >= 1000000)
     {
-        app.fps = window_start ? frames * 1e6f / (float)(now - window_start) : 0;
-        frames = 0;
-        window_start = now;
+        snprintf(text, sizeof(text), tr("%s wasn't installed: %s. Nothing was changed."), name,
+                 job->error[0] ? job->error : tr("the install stopped"));
+        app_message_box(text);
     }
-
-    if (host_shutdown_requested())
-    {
-        app_stop_game();
-        app_toast("The game closed.");
-        return;
-    }
-    app_draw_game(255);
-    if (app.fast_forward)
-    {
-        char speed[16];
-        snprintf(speed, sizeof(speed), "x%d", runs);
-        const float w = 150;
-        draw_rrect(plat_width() - w - 30, 30, w, 60, 30, 0xb0000000u);
-        icon_draw(ICON_PLAYER_TRACK_NEXT, plat_width() - w - 12, 38, 44, TH_FOCUS);
-        text_draw(plat_width() - 60, 42, 30, FONT_BOLD, TH_TEXT, ALIGN_RIGHT, speed);
-    }
-    if (app.settings.show_fps)
-    {
-        char f[32];
-        snprintf(f, sizeof(f), "%.1f FPS", app.fps);
-        const float w = text_width(26, FONT_BOLD, f) + 40;
-        draw_rrect(24, 24, w, 52, 26, 0xb0000000u);
-        text_draw(44, 36, 26, FONT_BOLD, TH_GOOD, ALIGN_LEFT, f);
-    }
+    store_job_finish();
 }
 
 /* ---------------------------------------------------------------- start-up */
 
 static void make_folders(void)
 {
-    char rtp2000[NP_PATH_MAX], rtp2003[NP_PATH_MAX];
-    path_join(rtp2000, sizeof(rtp2000), app.paths.rtp, "2000");
-    path_join(rtp2003, sizeof(rtp2003), app.paths.rtp, "2003");
-    const char *dirs[] = {app.paths.root, app.paths.games, app.paths.rtp, rtp2000, rtp2003, app.paths.logs,
-                          app.paths.cache};
+    const char *dirs[] = {app.paths.root, app.paths.logs, app.paths.cache};
     for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); ++i)
         make_dirs(dirs[i]);
     char probe[NP_PATH_MAX];
@@ -415,6 +457,37 @@ static void make_folders(void)
     else
         snprintf(app.storage_error, sizeof(app.storage_error), "%s isn't writable. Is the HEN running? (%s)",
                  app.paths.root, app.sandbox_reason[0] ? app.sandbox_reason : "no reason given");
+}
+
+/* The catalog's text beyond Latin-1 (curly quotes, dashes, other scripts) into the font atlases. */
+static void want_text(void)
+{
+    static int generation = -1;
+    static bool wanted[CATALOG_MAX_APPS];
+    const Catalog *catalog = store_catalog();
+    if (generation != store_generation())
+    {
+        generation = store_generation();
+        memset(wanted, 0, sizeof(wanted));
+        text_want_clear();
+        text_want(catalog->about);
+        text_want(catalog->about_footer);
+        for (int i = 0; i < catalog->tip_count; ++i)
+            text_want(catalog->tips[i]);
+        for (int i = 0; i < catalog->egg_count; ++i)
+            text_want(catalog->eggs[i]);
+        for (int i = 0; i < catalog->app_count; ++i)
+        {
+            text_want(catalog->apps[i].name);
+            text_want(catalog->apps[i].summary);
+        }
+    }
+    for (int i = 0; i < catalog->app_count; ++i)
+        if (!wanted[i] && store_app(i)->checked)
+        {
+            wanted[i] = true;
+            text_want(store_app(i)->release.notes);
+        }
 }
 
 int main(int argc, char **argv)
@@ -444,7 +517,7 @@ int main(int argc, char **argv)
 
     make_folders();
     char log_path[NP_PATH_MAX];
-    path_join(log_path, sizeof(log_path), app.paths.logs, "dulcamara.log");
+    path_join(log_path, sizeof(log_path), app.paths.logs, "solanum.log");
     np_log_open(log_path);
     ps5_crash_install(log_path);
 #if defined(__PROSPERO__)
@@ -454,13 +527,6 @@ int main(int argc, char **argv)
     np_log(NP_TITLE " %s starting, data folder %s", NP_VERSION, app.paths.root);
     np_log("screen: %s", plat_screen_info());
     np_log(app.sandboxed ? "storage: sandboxed (%s)" : "storage: unlocked%s", app.sandboxed ? app.sandbox_reason : "");
-    for (int i = 0; i < CORE_COUNT; ++i)
-    {
-        struct retro_system_info info;
-        memset(&info, 0, sizeof(info));
-        CORES[i].get_system_info(&info);
-        np_log("core: %s %s for %s", CORES[i].name, info.library_version ? info.library_version : "", CORES[i].runs);
-    }
     vk_probe(app.paths.root);
 
     config_defaults(&app.settings);
@@ -468,11 +534,23 @@ int main(int argc, char **argv)
     plat_audio_open(AUDIO_RATE);
     sfx_init(AUDIO_RATE);
     app_apply_settings();
+    app.random = apps_seed(plat_ticks_us() ^ (uint64_t)SDL_GetPerformanceCounter());
+
+#if defined(__PROSPERO__)
+    store_init(app.paths.root, "/user", "/data/homebrew");
+#else
+    /* the computer build: a made-up console in the data folder */
+    char registered[NP_PATH_MAX], homebrew[NP_PATH_MAX];
+    path_join(registered, sizeof(registered), app.paths.root, "console/user");
+    path_join(homebrew, sizeof(homebrew), app.paths.root, "console/data/homebrew");
+    store_init(app.paths.root, registered, homebrew);
+#endif
+    store_refresh(true);
+    app_next_tip(); /* from the catalog's copy, while the catalog loads */
     if (app.settings.update_check && !app.storage_error[0])
         update_check();
-    if (!app.storage_error[0])
-        app_rescan();
-    shelf_open();
+    app.screen = SCREEN_STORE;
+    store_screen_opened();
     if (app.storage_error[0])
         app_message_box(app.storage_error);
 
@@ -489,50 +567,52 @@ int main(int argc, char **argv)
             app.dt = 0.1f;
         last = now;
 
-        /* an update found at start installs by itself, once, a second after the app opened (as Mandrake) */
-        if (!update_offered && update_state() == UPDATE_AVAILABLE && now - opened >= 1000000 && app.game < 0)
+        /* a newer Solanum found at start installs by itself, once, a second after the app opened (as Mandrake) */
+        if (!update_offered && update_state() == UPDATE_AVAILABLE && now - opened >= 1000000)
         {
             update_offered = true;
-            app_toast_for("An update is available and will be installed on your next restart.", 4.0f);
+            app_toast_for("A newer Solanum is available and will be installed on your next restart.", 4.0f);
             update_install();
         }
 
         plat_poll(pads, &quit);
-        if (app.quit_requested)
+        if (app.quit_requested || (app.quit_at && now >= app.quit_at))
             quit = true;
         memcpy(app.pads, pads, sizeof(app.pads));
         uint32_t pressed = nav_pressed(pads);
         message_box_input(&pressed);
-        const bool backdrop = app.screen == SCREEN_LIBRARY || (app.screen == SCREEN_SETTINGS && app.game < 0);
-        plat_begin_frame(backdrop ? 0 : 0xff000000u);
-        static const char *const names[SCREEN_COUNT] = {"library", "game", "menu", "settings"};
+        store_job(&app.job);
+        job_ended();
+
+        store_lock();
+        want_text();
+        plat_begin_frame(0);
+        static const char *const names[SCREEN_COUNT] = {"store", "page", "settings"};
         ps5_crash_step(names[app.screen]);
         switch (app.screen)
         {
-        case SCREEN_LIBRARY: shelf_screen(pressed); break;
-        case SCREEN_GAME: game_screen(pads, pressed); break;
-        case SCREEN_MENU: menu_screen(pressed); break;
+        case SCREEN_STORE: store_screen(pressed); break;
+        case SCREEN_PAGE: page_screen(pressed); break;
         case SCREEN_SETTINGS: settings_screen(pressed); break;
         default: break;
         }
-        covers_update(app.game >= 0 ? app.game : app.settings.last_game);
         message_box_draw();
         toast_render();
+        store_unlock();
         plat_end_frame();
+        if (app.request != REQUEST_NONE)
+            carry_out();
     }
 
-    /* Only the desktop build gets here; the PS5 shell closes the title. */
+    /* Only the desktop build gets here, and the PS5's when Solanum closes itself (Close, or opening an app). */
     ps5_crash_step("shutdown");
     np_log("shutdown: leaving the main loop");
-    if (app.game >= 0)
-        app_stop_game();
+    store_cancel();
     app_save_settings();
 #if !defined(__PROSPERO__)
-    covers_stop();
     plat_audio_close();
     icons_shutdown();
     text_shutdown();
-    library_free(&app.library);
     plat_shutdown();
 #else
     /* The system closes the title: exit()/_exit() raise SIGSYS on the console. LoadExec "exit" ends it normally. */

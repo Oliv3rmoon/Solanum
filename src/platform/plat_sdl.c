@@ -359,7 +359,7 @@ void plat_default_root(char *out, size_t size)
     str_copy(out, size, NP_DATA);
 #else
     const char *env = SDL_getenv("NP_ROOT");
-    str_copy(out, size, env && *env ? env : "./dulcamara-data");
+    str_copy(out, size, env && *env ? env : "./solanum-data");
 #endif
 }
 
@@ -373,7 +373,7 @@ const char *plat_sandbox_probe(void)
 
 /* Settings > System > "Unlock /data with etaHEN": stored as a marker file so
  * it can be read before any unlock (paths that may work while sandboxed). */
-static const char *const NO_UNLOCK_MARKERS[] = {"/download0/dulcamara_no_unlock", NP_DATA "/no_unlock"};
+static const char *const NO_UNLOCK_MARKERS[] = {"/download0/solanum_no_unlock", NP_DATA "/no_unlock"};
 
 bool plat_unlock_disabled(void)
 {

@@ -292,7 +292,7 @@ if [[ ${APP_VULKAN:-0} == 1 ]]; then
         [[ $input == -lz || $input == */libz.a ]] || kept+=("$input")
     done
     # The SDK platform layer wraps fclose and fflush (its open_memstream). Mandrake kept them under other
-    # names for its NFS layer, which wrapped them too; Dulcamara has none, so the SDK's own wraps are used.
+    # names for its NFS layer, which wrapped them too; Dulcamara and Solanum have none, so the SDK's own wraps are used.
     link_inputs=("${kept[@]}" "${radv_link_inputs[@]}")
     linker_options+=(--error-limit=0)
     # AGC lives in system modules the SDK has no stubs for: tiny link-only
@@ -359,15 +359,11 @@ assert manifest["target_title"] == app.name and manifest["mode"] == "elf-helper"
 PY
 fi
 
-# Licences of Dulcamara and what it's built from (GPL: the texts travel with it).
+# Licences of Solanum and what it's built from (GPL: the texts travel with it).
 mkdir -p "$app/licenses"
 cp "$root/docs/THIRD-PARTY.txt" "$app/licenses/THIRD-PARTY.txt"
-cp "$root/LICENSE" "$app/licenses/LICENSE-Dulcamara.txt"
-for pair in "third_party/easyrpg-player/COPYING:LICENSE-EasyRPG-Player.txt" \
-    "third_party/easyrpg-player/docs/AUTHORS.md:AUTHORS-EasyRPG-Player.md" \
-    "third_party/liblcf/COPYING:LICENSE-liblcf.txt" \
-    "third_party/inih/LICENSE.txt:LICENSE-inih.txt" \
-    "build/easyrpg-ps5/pixman/pixman-0.46.4/COPYING:LICENSE-pixman.txt"; do
+cp "$root/LICENSE" "$app/licenses/LICENSE-Solanum.txt"
+for pair in "third_party/miniz/LICENSE:LICENSE-miniz.txt"; do
     [[ -f $root/${pair%%:*} ]] || { echo "missing licence: ${pair%%:*}" >&2; exit 2; }
     cp "$root/${pair%%:*}" "$app/licenses/${pair##*:}"
 done

@@ -1,5 +1,5 @@
 /*
- * Dulcamara - the settings file (settings.ini in the data folder) and the data folder's layout.
+ * Solanum - the settings file (settings.ini in the data folder) and the data folder's layout (Dulcamara's).
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef NP_CONFIG_H
@@ -13,7 +13,5 @@ void config_load(Settings *s, const char *path);
 bool config_save(const Settings *s, const char *path);
 /* The data folder's paths below root. */
 void config_paths(Paths *p, const char *root);
-/* The game buttons back to the core's defaults (cores.h). */
-void config_default_buttons(Settings *s, int core);
 
 #endif

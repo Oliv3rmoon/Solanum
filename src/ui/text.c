@@ -167,7 +167,7 @@ static int cmp_int(const void *a, const void *b)
     return *(const int *)a - *(const int *)b;
 }
 
-/* Dulcamara: text the interface shows that is not its own, the games' titles (text_want). */
+/* Dulcamara's: text the interface shows that is not its own (Solanum: the catalog's and the releases', text_want). */
 static char *wanted;
 static size_t wanted_len;
 

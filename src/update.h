@@ -1,6 +1,6 @@
 /*
  * SwanStationPS5 - updates from the project's GitHub releases.
- * Dulcamara: Oliv3rmoon/Dulcamara's (UPDATE_REPO, update_release.h).
+ * Solanum: Oliv3rmoon/Solanum's (UPDATE_REPO, update_release.h), as Dulcamara's.
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef NP_UPDATE_H

@@ -1,31 +1,31 @@
 /*
- * Dulcamara - which GitHub release the in-app update offers, and the checks it passes.
+ * Solanum - which GitHub release Solanum's own update offers, and the checks it passes (Dulcamara's).
  * SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * update.c asks https://api.github.com/repos/<UPDATE_REPO>/releases/latest, the newest release
- * of Oliv3rmoon/Dulcamara that is neither a draft nor a pre-release, and hands the
+ * of Oliv3rmoon/Solanum that is neither a draft nor a pre-release, and hands the
  * answer to release_evaluate(). A release is offered only when:
  *   1. its tag is a version, X.Y.Z (or vX.Y.Z), newer than the running one;
- *   2. it carries both UPDATE_ZIP ("PPSA99010.zip") and UPDATE_SUMS ("SHA256SUMS"), uploaded,
+ *   2. it carries both UPDATE_ZIP ("PPSA76526.zip") and UPDATE_SUMS ("SHA256SUMS"), uploaded,
  *      and both download addresses are this repository's own release files for that tag;
  *   3. SHA256SUMS lists the ZIP on one well-formed line (release_sums_lookup()), and, when GitHub
  *      reports the asset's digest, the two agree.
- * The download is then checked against that SHA-256 before anything is unpacked. darkxex's
- * SwanStationPS5 releases are never asked for, and a file anywhere else is never taken.
+ * The download is then checked against that SHA-256 before anything is unpacked. A file anywhere
+ * else is never taken.
  *
  * Plain C11 with no SDL or network, so the host test builds it alone
  * (tests/update_release_check.c, run by tests/test_update_release.py).
  */
-#ifndef DULCAMARA_UPDATE_RELEASE_H
-#define DULCAMARA_UPDATE_RELEASE_H
+#ifndef SOLANUM_UPDATE_RELEASE_H
+#define SOLANUM_UPDATE_RELEASE_H
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#define UPDATE_REPO "Oliv3rmoon/Dulcamara"
-#define UPDATE_ZIP "PPSA99010.zip"
+#define UPDATE_REPO "Oliv3rmoon/Solanum"
+#define UPDATE_ZIP "PPSA76526.zip"
 #define UPDATE_SUMS "SHA256SUMS"
 #define UPDATE_LATEST_URL "https://api.github.com/repos/" UPDATE_REPO "/releases/latest"
 #define UPDATE_DOWNLOAD_PREFIX "https://github.com/" UPDATE_REPO "/releases/download/"
@@ -37,7 +37,7 @@ typedef enum
     RELEASE_UNREADABLE,    /* not the JSON GitHub sends */
     RELEASE_NOT_PUBLISHED, /* a draft or a pre-release */
     RELEASE_BAD_TAG,       /* the tag is not X.Y.Z */
-    RELEASE_NO_ZIP,        /* no uploaded PPSA99010.zip */
+    RELEASE_NO_ZIP,        /* no uploaded PPSA76526.zip */
     RELEASE_NO_SUMS,       /* no uploaded SHA256SUMS */
     RELEASE_FOREIGN_FILE,  /* a file's address is not this repository's release download */
 } ReleaseVerdict;
@@ -45,7 +45,7 @@ typedef enum
 typedef struct
 {
     char version[16];    /* "1.6.0" (the tag without a "v") */
-    char zip_url[256];   /* https://github.com/Oliv3rmoon/Dulcamara/releases/download/<tag>/PPSA99010.zip */
+    char zip_url[256];   /* https://github.com/Oliv3rmoon/Solanum/releases/download/<tag>/PPSA76526.zip */
     char sums_url[256];  /* the same for SHA256SUMS */
     char zip_digest[65]; /* the ZIP's SHA-256 as GitHub reports it (lowercase hex), or "" */
     uint64_t zip_size;

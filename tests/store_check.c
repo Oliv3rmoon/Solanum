@@ -1,0 +1,965 @@
+/*
+ * Solanum - host check of the store's decisions, run by tests/test_store.py.
+ * SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * usage: store-check <tests/fixtures> <a scratch folder>
+ *
+ *   - the catalog: Oliv3rmoon/Solanum-Catalog's catalog.json as it is, and catalogs with bad entries, which
+ *     are left out with a line in the log while the rest are kept;
+ *   - the release's file: the asset's name from the catalog's pattern, and from the four apps' real
+ *     releases/latest answers (fixtures/releases), with the checksum file's SHA-256 and GitHub's digest;
+ *   - checksums: a download that isn't the release's is refused by the kit before the helper is told to
+ *     unpack anything, and its resumable copy is deleted; an interrupted download resumes from its copy;
+ *   - where an app is, what a release offers, the offer the helper installs from, the launch payload's
+ *     conversation;
+ *   - the Konami code, and a random tip or egg.
+ */
+#define _DEFAULT_SOURCE 1 /* glibc: lstat, strdup, usleep under -std=c11 */
+#include "../src/apps.h"
+#include "../src/catalog.h"
+#include "../src/nightshade.h"
+#include "../src/resume.h"
+
+#include "github_release.h"
+#include "self_update.h"
+#include "self_update_protocol.h"
+#include "self_update_sha256.h"
+#include "update_check.h"
+
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static int passed, failed;
+static const char *fixtures, *scratch;
+
+#define EXPECT(condition, what)                                                                                  \
+    do                                                                                                           \
+    {                                                                                                            \
+        if (condition)                                                                                           \
+            ++passed;                                                                                            \
+        else                                                                                                     \
+        {                                                                                                        \
+            ++failed;                                                                                            \
+            printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, what);                                                \
+        }                                                                                                        \
+    } while (0)
+
+static char *slurp(const char *name, size_t *length)
+{
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s", fixtures, name);
+    FILE *file = fopen(path, "rb");
+    if (!file)
+    {
+        printf("FAIL: no fixture %s\n", path);
+        exit(2);
+    }
+    fseek(file, 0, SEEK_END);
+    const long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    char *text = malloc((size_t)size + 1);
+    if (fread(text, 1, (size_t)size, file) != (size_t)size)
+        exit(2);
+    fclose(file);
+    text[size] = '\0';
+    *length = (size_t)size;
+    return text;
+}
+
+static void write_file(const char *path, const char *text, size_t length)
+{
+    char parent[1024];
+    snprintf(parent, sizeof(parent), "%s", path);
+    for (char *slash = strchr(parent + 1, '/'); slash; slash = strchr(slash + 1, '/'))
+    {
+        *slash = '\0';
+        mkdir(parent, 0755);
+        *slash = '/';
+    }
+    FILE *file = fopen(path, "wb");
+    if (!file || fwrite(text, 1, length, file) != length)
+        exit(2);
+    fclose(file);
+}
+
+static void sha256_hex(const void *data, size_t length, char out[65])
+{
+    self_update_sha256 hash;
+    unsigned char digest[32];
+    self_update_sha256_start(&hash);
+    self_update_sha256_add(&hash, data, length);
+    self_update_sha256_finish(&hash, digest);
+    self_update_sha256_hex(digest, out);
+}
+
+/* ---------------------------------------------------------------- the catalog */
+
+static char log_lines[64][512];
+static int log_count;
+
+static void collect(void *user, const char *line)
+{
+    (void)user;
+    if (log_count < 64)
+        snprintf(log_lines[log_count++], sizeof(log_lines[0]), "%s", line);
+}
+
+static int logged(const char *part)
+{
+    for (int i = 0; i < log_count; ++i)
+        if (strstr(log_lines[i], part))
+            return 1;
+    return 0;
+}
+
+static Catalog catalog;
+
+static void check_catalog(void)
+{
+    size_t length;
+    char *json = slurp("catalog.json", &length);
+    log_count = 0;
+    EXPECT(catalog_parse(json, length, &catalog, collect, NULL) == 4, "the live catalog's four apps are read");
+    EXPECT(log_count == 0, "the live catalog leaves nothing out");
+    EXPECT(strcmp(catalog.apps[0].id, "nightshade") == 0 && strcmp(catalog.apps[0].title_id, "PPSA99008") == 0 &&
+               catalog.apps[0].family && catalog.apps[0].attested && catalog.apps[0].category == CATEGORY_EMULATOR,
+           "Nightshade as the catalog lists it");
+    EXPECT(strcmp(catalog.apps[0].asset, "Nightshade-v{version}.zip") == 0 &&
+               strcmp(catalog.apps[0].repo, "Oliv3rmoon/Nightshade") == 0 &&
+               strcmp(catalog.apps[0].checksums, "SHA256SUMS") == 0 &&
+               strcmp(catalog.apps[0].folder, "PPSA99008") == 0 &&
+               strcmp(catalog.apps[0].license, "GPL-3.0-or-later") == 0,
+           "Nightshade's release fields");
+    EXPECT(catalog.apps[1].category == CATEGORY_MEDIA && catalog.apps[2].category == CATEGORY_STREAMING &&
+               strcmp(catalog.apps[3].name, "Mandrake") == 0,
+           "Physalis, Datura and Mandrake follow, in order");
+    EXPECT(catalog.tip_count == 8 && catalog.egg_count == 10, "eight tips and ten hidden lines");
+    EXPECT(strcmp(catalog.eggs[0], "Imagine gatekeeping a homebrew store. Couldn't be us.") == 0,
+           "the hidden lines are kept exactly as the catalog has them");
+    EXPECT(strcmp(catalog.about_footer,
+                  "No title IDs were kept under lock and key in the making of this store.") == 0,
+           "the About footer");
+    EXPECT(strstr(catalog.about, "open catalog") != NULL, "the catalog's about line");
+    free(json);
+
+    /* Bad entries: each left out with its reason; the good ones around them kept. */
+    static const char bad[] =
+        "{\"schema\":1,\"name\":\"Test\",\"apps\":["
+        "{\"id\":\"good\",\"name\":\"Good\",\"category\":\"tool\",\"summary\":\"s\",\"title_id\":\"ABCD12345\","
+        "\"repo\":\"o/good\",\"asset\":\"Good-{version}.zip\",\"folder\":\"ABCD12345\",\"checksums\":\"SHA256SUMS\","
+        "\"attested\":false,\"license\":\"MIT\"},"
+        "{\"id\":\"short\",\"name\":\"Short\",\"category\":\"tool\",\"summary\":\"s\",\"title_id\":\"ABCD1234\","
+        "\"repo\":\"o/s\",\"asset\":\"a.zip\",\"folder\":\"f\",\"checksums\":\"SHA256SUMS\",\"attested\":true,"
+        "\"license\":\"MIT\"},"
+        "{\"id\":\"norepo\",\"name\":\"No repo\",\"category\":\"tool\",\"summary\":\"s\",\"title_id\":\"ABCD22222\","
+        "\"repo\":\"not a repo\",\"asset\":\"a.zip\",\"folder\":\"f\",\"checksums\":\"SHA256SUMS\",\"attested\":true,"
+        "\"license\":\"MIT\"},"
+        "{\"id\":\"nolicense\",\"name\":\"No license\",\"category\":\"tool\",\"summary\":\"s\","
+        "\"title_id\":\"ABCD33333\",\"repo\":\"o/n\",\"asset\":\"a.zip\",\"folder\":\"f\",\"checksums\":\"SHA256SUMS\","
+        "\"attested\":true},"
+        "{\"id\":\"cat\",\"name\":\"Cat\",\"category\":\"warez\",\"summary\":\"s\",\"title_id\":\"ABCD44444\","
+        "\"repo\":\"o/c\",\"asset\":\"a.zip\",\"folder\":\"f\",\"checksums\":\"SHA256SUMS\",\"attested\":true,"
+        "\"license\":\"MIT\"},"
+        "{\"id\":\"path\",\"name\":\"Path\",\"category\":\"game\",\"summary\":\"s\",\"title_id\":\"ABCD55555\","
+        "\"repo\":\"o/p\",\"asset\":\"../../evil.zip\",\"folder\":\"f\",\"checksums\":\"SHA256SUMS\",\"attested\":true,"
+        "\"license\":\"MIT\"},"
+        "{\"id\":\"twice\",\"name\":\"Twice\",\"category\":\"game\",\"summary\":\"s\",\"title_id\":\"ABCD12345\","
+        "\"repo\":\"o/t\",\"asset\":\"a.zip\",\"folder\":\"f\",\"checksums\":\"SHA256SUMS\",\"attested\":true,"
+        "\"license\":\"MIT\"},"
+        "{\"id\":\"flag\",\"name\":\"Flag\",\"category\":\"game\",\"summary\":\"s\",\"title_id\":\"ABCD66666\","
+        "\"repo\":\"o/f\",\"asset\":\"a.zip\",\"folder\":\"f\",\"checksums\":\"SHA256SUMS\",\"attested\":\"yes\","
+        "\"license\":\"MIT\"},"
+        "\"not an object\","
+        "{\"id\":\"also-good\",\"name\":\"Also good\",\"family\":true,\"category\":\"store\",\"summary\":\"s\","
+        "\"title_id\":\"WXYZ00001\",\"repo\":\"o/also\",\"asset\":\"Also.zip\",\"folder\":\"WXYZ00001\","
+        "\"checksums\":\"sums.txt\",\"attested\":true,\"license\":\"GPL-3.0-or-later\"}"
+        "],\"tips\":[\"one\",7,\"\",\"two \\u2019quoted\\u2019\"],\"eggs\":\"not a list\"}";
+    log_count = 0;
+    EXPECT(catalog_parse(bad, sizeof(bad) - 1, &catalog, collect, NULL) == 2, "two good apps among bad ones");
+    EXPECT(strcmp(catalog.apps[0].id, "good") == 0 && strcmp(catalog.apps[1].id, "also-good") == 0 &&
+               catalog.apps[1].family && !catalog.apps[0].family,
+           "the good ones are kept, in order");
+    EXPECT(logged("app 1 (short) left out: title_id is not four letters and five digits"),
+           "a short title ID is logged");
+    EXPECT(logged("app 2 (norepo) left out: repo is not owner/name"), "a bad repository is logged");
+    EXPECT(logged("app 3 (nolicense) left out: license is missing"), "a missing license is logged");
+    EXPECT(logged("app 4 (cat) left out: category \"warez\" is not one Solanum knows"), "an unknown category");
+    EXPECT(logged("app 5 (path) left out: asset can't name a release's file"), "a path as the asset");
+    EXPECT(logged("app 6 (twice) left out: its title ID belongs to an app listed already"), "a title ID twice");
+    EXPECT(logged("app 7 (flag) left out: attested is not true or false"), "attested of the wrong type");
+    EXPECT(logged("app 8 left out: not an object"), "an entry that isn't an object");
+    EXPECT(log_count == 11, "one log line for each left out, two for tips and one for eggs");
+    EXPECT(catalog.tip_count == 2 && strcmp(catalog.tips[1], "two \xe2\x80\x99quoted\xe2\x80\x99") == 0,
+           "tips: the text ones kept, escapes decoded");
+    EXPECT(logged("tips entry 1 left out") && logged("tips entry 2 left out") && logged("eggs is not a list") &&
+               catalog.egg_count == 0,
+           "tips and eggs that aren't text are logged");
+
+    log_count = 0;
+    EXPECT(catalog_parse("{\"schema\":2,\"apps\":[]}", 22, &catalog, collect, NULL) == -1 &&
+               catalog.app_count == 0 && logged("not a catalog of schema 1"),
+           "another schema is refused whole");
+    EXPECT(catalog_parse("<html>rate limited</html>", 25, &catalog, collect, NULL) == -1, "not JSON is refused");
+    EXPECT(catalog_parse("{\"schema\":1}", 12, &catalog, collect, NULL) == -1, "no apps is refused");
+    EXPECT(catalog_parse("{\"schema\":1,\"apps\":[]}", 22, &catalog, collect, NULL) == 0, "an empty list is a list");
+}
+
+/* ---------------------------------------------------------------- the release's file */
+
+typedef struct
+{
+    const char *answer;   /* releases/latest's */
+    size_t answer_length;
+    int status;
+    const char *sums;     /* the checksum file's */
+    size_t sums_length;
+    int sums_downloads;
+} FakeGitHub;
+
+static int fake_fetch(void *user, const char *url, char *body, size_t capacity, size_t *length, int *status)
+{
+    FakeGitHub *g = user;
+    (void)url;
+    *status = g->status;
+    *length = g->answer_length < capacity ? g->answer_length : capacity;
+    memcpy(body, g->answer, *length);
+    return 0;
+}
+
+static int fake_download(void *user, const char *url, uint64_t limit, self_update_sink sink, void *sink_user)
+{
+    FakeGitHub *g = user;
+    (void)url;
+    ++g->sums_downloads;
+    if (!g->sums || g->sums_length > limit)
+        return -404;
+    return sink(sink_user, g->sums, g->sums_length) == 1 ? 0 : -1;
+}
+
+static void check_release(void)
+{
+    static const struct
+    {
+        const char *app, *pattern, *tag, *name, *sha256;
+    } APPS[] = {
+        {"Nightshade", "Nightshade-v{version}.zip", "v1.010.002", "Nightshade-v1.010.002.zip",
+         "9f4d939463204764c7cbaef7697ed9b5053168847024f6da9a477984d72d6286"},
+        {"Physalis", "PPSA99003.zip", "01.002.001", "PPSA99003.zip",
+         "3e1ddd6402f2a19ab3feee249ae2cb9f8a7a2894e64868347990a3bda785bf6a"},
+        {"Datura", "PPSA99002.zip", "01.001.001", "PPSA99002.zip",
+         "0eb678f8866a7905edf78ebf587f2e6f6fed27c0f8f4ec470ed0f26997ba136a"},
+        {"Mandrake", "PPSA98510.zip", "1.6.1", "PPSA98510.zip",
+         "338e80e3d6404bab2eec5d1401c29f9f1a7f52535f9c745d5c331a4a2bb06c5e"},
+    };
+    char name[128];
+    EXPECT(github_release_asset_name("Nightshade-v{version}.zip", "v1.010.002", name, sizeof(name)) &&
+               strcmp(name, "Nightshade-v1.010.002.zip") == 0,
+           "{version} is the tag without its v");
+    EXPECT(github_release_asset_name("App-{version}-{version}.zip", "1.6.1", name, sizeof(name)) &&
+               strcmp(name, "App-1.6.1-1.6.1.zip") == 0,
+           "{version} more than once");
+    EXPECT(github_release_asset_name("PPSA99003.zip", "01.002.001", name, sizeof(name)) &&
+               strcmp(name, "PPSA99003.zip") == 0,
+           "a fixed name names itself");
+    EXPECT(!github_release_asset_name("../{version}.zip", "1.0.0", name, sizeof(name)) && name[0] == '\0',
+           "a name with a path is refused");
+    EXPECT(!github_release_asset_name("x-{version}.zip", "1.0/../../a", name, sizeof(name)),
+           "a tag that would make a path is refused");
+    EXPECT(!github_release_asset_name("{version}.zip", "v1.0.0", name, 8), "a name too long for its room");
+
+    for (size_t i = 0; i < sizeof(APPS) / sizeof(APPS[0]); ++i)
+    {
+        char file[64], what[200];
+        size_t length, sums_length;
+        snprintf(file, sizeof(file), "releases/%s-latest.json", APPS[i].app);
+        char *json = slurp(file, &length);
+        snprintf(file, sizeof(file), "releases/%s-SHA256SUMS", APPS[i].app);
+        char *sums = slurp(file, &sums_length);
+        github_release_asset asset;
+        github_release_files files;
+        snprintf(what, sizeof(what), "%s: the file its pattern names, from its real release", APPS[i].app);
+        EXPECT(github_release_asset_read(json, length, APPS[i].pattern, "SHA256SUMS", &asset, &files) ==
+                       GITHUB_RELEASE_NEWER &&
+                   strcmp(asset.tag, APPS[i].tag) == 0 && strcmp(asset.name, APPS[i].name) == 0 && asset.size > 0 &&
+                   files.sums_files == 1 && strcmp(files.digest, APPS[i].sha256) == 0,
+               what);
+        snprintf(what, sizeof(what), "%s: its date and notes", APPS[i].app);
+        EXPECT(strncmp(asset.published, "2026-10-29T", 11) == 0 && strlen(asset.notes) > 40 &&
+                   strstr(asset.notes, "**") == NULL,
+               what);
+
+        FakeGitHub github = {json, length, 200, sums, sums_length, 0};
+        const self_update_platform platform = {fake_fetch, fake_download, NULL, NULL, NULL, NULL, NULL, &github};
+        github_release_report report;
+        char repo[64], url[256];
+        snprintf(repo, sizeof(repo), "Oliv3rmoon/%s", APPS[i].app);
+        snprintf(url, sizeof(url), "https://github.com/%s/releases/download/%s/%s", repo, APPS[i].tag, APPS[i].name);
+        snprintf(what, sizeof(what), "%s: offered with the SHA-256 its SHA256SUMS gives", APPS[i].app);
+        EXPECT(github_release_asset_check(&platform, repo, APPS[i].pattern, "SHA256SUMS", &asset, &report) ==
+                       GITHUB_RELEASE_NEWER &&
+                   asset.from_sums && strcmp(asset.sha256, APPS[i].sha256) == 0 && strcmp(asset.url, url) == 0 &&
+                   github.sums_downloads == 1,
+               what);
+
+        /* The checksum file and GitHub's digest disagree: nothing is offered. */
+        char *wrong = strdup(sums);
+        wrong[0] = wrong[0] == '0' ? '1' : '0';
+        github.sums = wrong;
+        snprintf(what, sizeof(what), "%s: a checksum file that disagrees with GitHub's digest is refused",
+                 APPS[i].app);
+        EXPECT(github_release_asset_check(&platform, repo, APPS[i].pattern, "SHA256SUMS", &asset, &report) ==
+                       GITHUB_RELEASE_HASHES_DIFFER &&
+                   asset.sha256[0] == '\0',
+               what);
+        free(wrong);
+        free(sums);
+        free(json);
+    }
+
+    /* The pattern names a file the release doesn't have; a draft; a pre-release; a checksum file of another name. */
+    size_t length;
+    char *json = slurp("releases/Physalis-latest.json", &length);
+    github_release_asset asset;
+    github_release_files files;
+    EXPECT(github_release_asset_read(json, length, "PPSA99999.zip", "SHA256SUMS", &asset, &files) ==
+               GITHUB_RELEASE_NO_ZIP,
+           "a file the release lacks is no offer");
+    EXPECT(github_release_asset_read(json, length, "PPSA99003.zip", "CHECKSUMS.txt", &asset, &files) ==
+                   GITHUB_RELEASE_NEWER &&
+               files.sums_files == 0 && files.digest[0],
+           "a checksum file the release lacks: GitHub's digest is what is left");
+    char *edited = strdup(json);
+    char *flag = strstr(edited, "\"prerelease\":false");
+    memcpy(flag, "\"prerelease\":true ", 18);
+    EXPECT(github_release_asset_read(edited, length, "PPSA99003.zip", "SHA256SUMS", &asset, &files) ==
+               GITHUB_RELEASE_NOT_PUBLISHED,
+           "a pre-release is never offered");
+    free(edited);
+    edited = strdup(json);
+    flag = strstr(edited, "\"draft\":false");
+    memcpy(flag, "\"draft\":true ", 13);
+    EXPECT(github_release_asset_read(edited, length, "PPSA99003.zip", "SHA256SUMS", &asset, &files) ==
+               GITHUB_RELEASE_NOT_PUBLISHED,
+           "a draft is never offered");
+    free(edited);
+    /* No checksum file and no digest: nothing to check it against. */
+    edited = strdup(json);
+    for (char *at = strstr(edited, "\"digest\":\"sha256:"); at; at = strstr(at + 1, "\"digest\":\"sha256:"))
+        memcpy(at + 10, "md5:", 4);
+    FakeGitHub github = {edited, length, 200, NULL, 0, 0};
+    const self_update_platform platform = {fake_fetch, fake_download, NULL, NULL, NULL, NULL, NULL, &github};
+    github_release_report report;
+    EXPECT(github_release_asset_check(&platform, "Oliv3rmoon/Physalis", "PPSA99003.zip", "CHECKSUMS.txt", &asset,
+                                      &report) == GITHUB_RELEASE_NO_HASH,
+           "a file with no checksum at all is never offered");
+    free(edited);
+    github.answer = "{\"message\":\"Not Found\"}";
+    github.answer_length = strlen(github.answer);
+    github.status = 404;
+    EXPECT(github_release_asset_check(&platform, "Oliv3rmoon/Physalis", "PPSA99003.zip", NULL, &asset, &report) ==
+               GITHUB_RELEASE_NONE,
+           "no release");
+    github.status = 403;
+    EXPECT(github_release_asset_check(&platform, "Oliv3rmoon/Physalis", "PPSA99003.zip", NULL, &asset, &report) ==
+               GITHUB_RELEASE_RATE_LIMITED,
+           "GitHub's rate limit");
+    free(json);
+}
+
+/* ---------------------------------------------------------------- checksums: the kit's job */
+
+/* The helper's side of the connection: it answers what self_update.c waits for, and keeps what it is sent. */
+typedef struct
+{
+    const char *answers;
+    size_t answered;
+    char *sent;
+    size_t sent_length, sent_capacity;
+    int closed;
+} FakeHelper;
+
+static long helper_send(void *user, const void *data, size_t size)
+{
+    FakeHelper *h = user;
+    if (h->sent_length + size > h->sent_capacity)
+    {
+        h->sent_capacity = (h->sent_length + size) * 2;
+        h->sent = realloc(h->sent, h->sent_capacity);
+    }
+    memcpy(h->sent + h->sent_length, data, size);
+    h->sent_length += size;
+    return (long)size;
+}
+
+static long helper_receive(void *user, void *data, size_t size)
+{
+    FakeHelper *h = user;
+    const size_t left = strlen(h->answers) - h->answered;
+    if (left == 0 || size == 0)
+        return 0;
+    ((char *)data)[0] = h->answers[h->answered++];
+    return 1;
+}
+
+static void helper_close(void *user)
+{
+    ((FakeHelper *)user)->closed = 1;
+}
+
+/* After the request's lines: the archive in pieces. 1 when its end mark (a zero length) was sent. */
+static int end_mark_sent(const FakeHelper *h, int request_lines, uint64_t *archive_bytes)
+{
+    size_t at = 0;
+    *archive_bytes = 0;
+    for (int line = 0; line < request_lines; ++line)
+    {
+        while (at < h->sent_length && h->sent[at] != '\n')
+            ++at;
+        ++at;
+    }
+    while (at + 4 <= h->sent_length)
+    {
+        const unsigned char *p = (const unsigned char *)h->sent + at;
+        const size_t piece = (size_t)p[0] | (size_t)p[1] << 8 | (size_t)p[2] << 16 | (size_t)p[3] << 24;
+        at += 4;
+        if (piece == 0)
+            return 1;
+        at += piece;
+        *archive_bytes += piece;
+    }
+    return 0;
+}
+
+typedef struct
+{
+    FakeHelper helper;
+    const char *bytes; /* what the "download" delivers */
+    size_t length;
+} FakeConsole;
+
+static int console_open_helper(void *user, self_update_channel *channel)
+{
+    FakeConsole *c = user;
+    channel->send = helper_send;
+    channel->receive = helper_receive;
+    channel->close = helper_close;
+    channel->user = &c->helper;
+    return 1;
+}
+
+static int console_download(void *user, const char *url, uint64_t limit, self_update_sink sink, void *sink_user)
+{
+    FakeConsole *c = user;
+    (void)url;
+    if (c->length > limit)
+        return -1;
+    for (size_t at = 0; at < c->length; at += 1000)
+        if (sink(sink_user, c->bytes + at, c->length - at < 1000 ? c->length - at : 1000) != 1)
+            return -1;
+    return 0;
+}
+
+static uint64_t console_now(void *user)
+{
+    (void)user;
+    static uint64_t now;
+    return now += 10;
+}
+
+static self_update_phase run_job(FakeConsole *console, const char *sha256, size_t size, self_update_status *status)
+{
+    const self_update_platform platform = {NULL, console_download, NULL, console_open_helper, NULL, NULL,
+                                           console_now, console};
+    self_update_offer offer;
+    self_update_job job;
+    memset(&offer, 0, sizeof(offer));
+    memset(&job, 0, sizeof(job));
+    snprintf(offer.title, sizeof(offer.title), "PPSA99003");
+    snprintf(offer.name, sizeof(offer.name), "Physalis");
+    snprintf(offer.installed, sizeof(offer.installed), "none");
+    snprintf(offer.available, sizeof(offer.available), "01.002.001");
+    snprintf(offer.version, sizeof(offer.version), "01.002.001");
+    snprintf(offer.artifact, sizeof(offer.artifact),
+             "https://github.com/Oliv3rmoon/Physalis/releases/download/01.002.001/PPSA99003.zip");
+    snprintf(offer.sha256, sizeof(offer.sha256), "%s", sha256);
+    snprintf(offer.beside, sizeof(offer.beside), "PPSA76526");
+    offer.size = size;
+    if (self_update_start(&job, &platform, &offer) != 1)
+        return SELF_UPDATE_IDLE;
+    for (int i = 0; i < 2000; ++i)
+    {
+        self_update_poll(&job, status);
+        if (status->phase == SELF_UPDATE_FAILED || status->phase == SELF_UPDATE_INSTALLED ||
+            status->phase == SELF_UPDATE_CANCELLED)
+            break;
+        usleep(1000);
+    }
+    self_update_finish(&job);
+    return status->phase;
+}
+
+static void check_checksums(void)
+{
+    static char release[50000];
+    char right[65], wrong[65];
+    uint64_t archive = 0;
+    self_update_status status;
+    for (size_t i = 0; i < sizeof(release); ++i)
+        release[i] = (char)(i * 31 + 7);
+    sha256_hex(release, sizeof(release), right);
+    memcpy(wrong, right, sizeof(right));
+    wrong[0] = wrong[0] == 'a' ? 'b' : 'a';
+
+    /* A download that isn't the release: refused, and the helper never told to unpack. */
+    FakeConsole bad = {{"ready\nstaged\napplying\ninstalled 01.002.001 /data/homebrew/PPSA99003\n", 0, NULL, 0, 0, 0},
+                       release, sizeof(release)};
+    EXPECT(run_job(&bad, wrong, sizeof(release), &status) == SELF_UPDATE_FAILED &&
+               strstr(status.error, "doesn't match") != NULL,
+           "the kit refuses a download whose SHA-256 isn't the release's");
+    EXPECT(!end_mark_sent(&bad.helper, 10, &archive) && bad.helper.closed && archive == sizeof(release),
+           "... before its end: the helper unpacks nothing (it removes what it saved when the connection ends)");
+    free(bad.helper.sent);
+
+    /* The same with the right SHA-256: the end mark goes, and the install goes through to its end. */
+    FakeConsole good = {{"ready\nstaged\napplying\ninstalled 01.002.001 /data/homebrew/PPSA99003\n", 0, NULL, 0, 0, 0},
+                        release, sizeof(release)};
+    EXPECT(run_job(&good, right, sizeof(release), &status) == SELF_UPDATE_INSTALLED &&
+               strcmp(status.version, "01.002.001") == 0 &&
+               strcmp(status.folder, "/data/homebrew/PPSA99003") == 0,
+           "the release itself is installed");
+    EXPECT(end_mark_sent(&good.helper, 10, &archive) && archive == sizeof(release) &&
+               strncmp(good.helper.sent, "PSU1\ninstall\nPPSA99003\nnone\n01.002.001\n50000\n", 44) == 0,
+           "... as an install request beside Solanum, with its end mark");
+    EXPECT(strstr(good.helper.sent, "\nPPSA76526\n") != NULL, "... naming Solanum as the app asking");
+    free(good.helper.sent);
+
+    /* A download shorter than the release lists: refused too. */
+    FakeConsole short_one = {{"ready\n", 0, NULL, 0, 0, 0}, release, sizeof(release) - 1};
+    EXPECT(run_job(&short_one, right, sizeof(release), &status) == SELF_UPDATE_FAILED &&
+               !end_mark_sent(&short_one.helper, 10, &archive),
+           "a download shorter than the release is refused");
+    free(short_one.helper.sent);
+}
+
+/* ---------------------------------------------------------------- resuming */
+
+typedef struct
+{
+    const char *bytes;
+    size_t length;
+    size_t cut_after;  /* the connection drops after this many bytes of one answer (0: never) */
+    int ignore_range;  /* answers 200 with the whole file to a range */
+    uint64_t offsets[8];
+    int requests;
+} FakeServer;
+
+static int fake_range(void *user, const char *url, uint64_t offset, uint64_t limit, self_update_sink sink,
+                      void *sink_user, int *status)
+{
+    FakeServer *s = user;
+    (void)url;
+    (void)limit;
+    if (s->requests < 8)
+        s->offsets[s->requests] = offset;
+    ++s->requests;
+    *status = offset > 0 && !s->ignore_range ? 206 : 200;
+    if (offset > 0 && *status != 206)
+        return -1;
+    size_t sent = 0;
+    for (size_t at = (size_t)offset; at < s->length; at += 700)
+    {
+        const size_t piece = s->length - at < 700 ? s->length - at : 700;
+        if (s->cut_after && sent + piece > s->cut_after)
+            return -(10000 + 56); /* CURLE_RECV_ERROR */
+        if (sink(sink_user, s->bytes + at, piece) != 1)
+            return -1;
+        sent += piece;
+    }
+    return 0;
+}
+
+typedef struct
+{
+    char *data;
+    size_t length;
+} Received;
+
+static int receive(void *user, const void *data, size_t size)
+{
+    Received *r = user;
+    r->data = realloc(r->data, r->length + size);
+    memcpy(r->data + r->length, data, size);
+    r->length += size;
+    return 1;
+}
+
+static uint64_t size_of(const char *path)
+{
+    struct stat info;
+    return stat(path, &info) == 0 ? (uint64_t)info.st_size : 0;
+}
+
+static void check_resume(void)
+{
+    static char release[30000];
+    for (size_t i = 0; i < sizeof(release); ++i)
+        release[i] = (char)(i * 7 + 3);
+    FakeServer server = {release, sizeof(release), 12000, 0, {0}, 0};
+    ResumeDownload d;
+    memset(&d, 0, sizeof(d));
+    char cache[600];
+    snprintf(cache, sizeof(cache), "%s/cache", scratch);
+    mkdir(cache, 0755);
+    sha256_hex(release, sizeof(release), d.sha256);
+    resume_part_path(d.part, sizeof(d.part), cache, "PPSA99003", d.sha256);
+    d.size = sizeof(release);
+    d.range = fake_range;
+    d.range_user = &server;
+    remove(d.part);
+
+    /* Cut off: what arrived stays in the copy. */
+    Received first = {NULL, 0};
+    EXPECT(resume_download(&d, "https://github.com/x/y/releases/download/1/a.zip", sizeof(release), receive,
+                           &first) < 0 &&
+               size_of(d.part) == first.length && first.length > 0 && first.length < sizeof(release),
+           "an interrupted download keeps what arrived");
+    const size_t kept = first.length;
+    free(first.data);
+
+    /* Again: the copy first, then only the rest from the network, with a range. */
+    server.cut_after = 0;
+    Received second = {NULL, 0};
+    EXPECT(resume_download(&d, "https://github.com/x/y/releases/download/1/a.zip", sizeof(release), receive,
+                           &second) == 0 &&
+               second.length == sizeof(release) && memcmp(second.data, release, sizeof(release)) == 0 &&
+               !d.mismatch,
+           "the next try hands on the whole file");
+    EXPECT(server.requests == 2 && server.offsets[1] == kept && d.reused == kept &&
+               d.fetched == sizeof(release) - kept && d.status == 206,
+           "... asking the network only for what was missing");
+    free(second.data);
+
+    /* Complete in the copy: nothing is asked of the network. */
+    Received third = {NULL, 0};
+    EXPECT(resume_download(&d, "https://github.com/x/y/releases/download/1/a.zip", sizeof(release), receive,
+                           &third) == 0 &&
+               third.length == sizeof(release) && server.requests == 2 && d.fetched == 0,
+           "a whole copy is handed on without a request");
+    free(third.data);
+
+    /* A copy that isn't the release (a disk that went wrong): handed on, found out, deleted. */
+    FILE *copy = fopen(d.part, "r+b");
+    fputc('X', copy);
+    fclose(copy);
+    Received fourth = {NULL, 0};
+    EXPECT(resume_download(&d, "https://github.com/x/y/releases/download/1/a.zip", sizeof(release), receive,
+                           &fourth) == 0 &&
+               d.mismatch && size_of(d.part) == 0,
+           "a copy that doesn't match the release's SHA-256 is deleted, never resumed");
+    free(fourth.data);
+
+    /* A server that ignores ranges: the copy goes, the try fails, the next starts over. */
+    server.cut_after = 12000;
+    Received fifth = {NULL, 0};
+    (void)resume_download(&d, "https://github.com/x/y/releases/download/1/a.zip", sizeof(release), receive, &fifth);
+    free(fifth.data);
+    server.cut_after = 0;
+    server.ignore_range = 1;
+    Received sixth = {NULL, 0};
+    EXPECT(resume_download(&d, "https://github.com/x/y/releases/download/1/a.zip", sizeof(release), receive,
+                           &sixth) < 0 &&
+               size_of(d.part) == 0 && d.status == 200,
+           "a server that ignores the range: the copy is dropped");
+    free(sixth.data);
+    Received seventh = {NULL, 0};
+    EXPECT(resume_download(&d, "https://github.com/x/y/releases/download/1/a.zip", sizeof(release), receive,
+                           &seventh) == 0 &&
+               seventh.length == sizeof(release) && !d.mismatch,
+           "... and the next try starts from the beginning");
+    free(seventh.data);
+
+    /* The release's own bytes, but the wrong release: the download is the one refused. */
+    server.ignore_range = 0;
+    remove(d.part);
+    char other[65];
+    memcpy(other, d.sha256, sizeof(other));
+    d.sha256[5] = d.sha256[5] == 'f' ? 'e' : 'f';
+    Received eighth = {NULL, 0};
+    EXPECT(resume_download(&d, "https://github.com/x/y/releases/download/1/a.zip", sizeof(release), receive,
+                           &eighth) == 0 &&
+               d.mismatch && size_of(d.part) == 0,
+           "a download that doesn't match its SHA-256 leaves no copy behind");
+    free(eighth.data);
+    memcpy(d.sha256, other, sizeof(other));
+
+    /* An older release's copy goes when a newer one is downloaded. */
+    char older[700];
+    resume_part_path(older, sizeof(older), cache, "PPSA99003", "0123456789abcdef0123456789abcdef");
+    write_file(older, "old", 3);
+    write_file(d.part, "new", 3);
+    char unrelated[700];
+    resume_part_path(unrelated, sizeof(unrelated), cache, "PPSA99002", "0123456789abcdef0123456789abcdef");
+    write_file(unrelated, "other app", 9);
+    resume_forget_others(cache, "PPSA99003", d.part);
+    EXPECT(size_of(older) == 0 && size_of(d.part) == 3 && size_of(unrelated) == 9,
+           "an older release's copy of the same app is deleted, the rest kept");
+    remove(d.part);
+    remove(unrelated);
+}
+
+/* ---------------------------------------------------------------- where an app is, what is offered */
+
+static void param(const char *folder, const char *title, const char *version)
+{
+    char path[900], text[200];
+    snprintf(path, sizeof(path), "%s/sce_sys/param.json", folder);
+    const int n = snprintf(text, sizeof(text), "{\"titleId\": \"%s\", \"contentVersion\": \"%s\"}", title, version);
+    write_file(path, text, (size_t)n);
+}
+
+static void check_apps(void)
+{
+    char root[700], homebrew[760], user[760], folder[900], own[800];
+    snprintf(root, sizeof(root), "%s/console", scratch);
+    snprintf(homebrew, sizeof(homebrew), "%s/data/homebrew", root);
+    snprintf(user, sizeof(user), "%s/user", root);
+    snprintf(folder, sizeof(folder), "%s/PPSA76526", homebrew);
+    param(folder, "PPSA76526", "00.001.000");
+    snprintf(folder, sizeof(folder), "%s/PPSA99003", homebrew);
+    param(folder, "PPSA99003", "01.002.000");
+    snprintf(folder, sizeof(folder), "%s/Datura", homebrew);
+    param(folder, "PPSA99002", "01.001.001");
+    char eboot[960];
+    snprintf(eboot, sizeof(eboot), "%s/PPSA99003/eboot.bin", homebrew);
+    write_file(eboot, "1234567890", 10);
+
+    char install_dir[900];
+    snprintf(install_dir, sizeof(install_dir), "%s/PPSA76526", homebrew);
+    apps_own_folder("PPSA76526", user, install_dir, own, sizeof(own));
+    EXPECT(strcmp(own, install_dir) == 0, "Solanum's own folder");
+
+    Installed found = apps_find("PPSA99003", user, own, homebrew);
+    snprintf(folder, sizeof(folder), "%s/PPSA99003", homebrew);
+    EXPECT(strcmp(found.folder, folder) == 0 && strcmp(found.version, "01.002.000") == 0 && !found.image,
+           "an app in the folder named after its title");
+    found = apps_find("PPSA99002", user, own, homebrew);
+    snprintf(folder, sizeof(folder), "%s/Datura", homebrew);
+    EXPECT(strcmp(found.folder, folder) == 0, "an app in a folder of another name");
+    found = apps_find("PPSA98510", user, own, homebrew);
+    EXPECT(found.folder[0] == '\0', "an app that isn't installed");
+
+    /* ShadowMountPlus's records: a folder elsewhere, an image. */
+    char elsewhere[900], record[900];
+    snprintf(elsewhere, sizeof(elsewhere), "%s/mnt/usb0/homebrew/PPSA98510", root);
+    param(elsewhere, "PPSA98510", "01.006.000");
+    snprintf(record, sizeof(record), "%s/app/PPSA98510/mount.lnk", user);
+    char line[1000];
+    const int n = snprintf(line, sizeof(line), "%s/\n", elsewhere);
+    write_file(record, line, (size_t)n);
+    found = apps_find("PPSA98510", user, own, homebrew);
+    EXPECT(strcmp(found.folder, elsewhere) == 0 && strcmp(found.version, "01.006.000") == 0,
+           "an app where ShadowMountPlus mounted it from (a USB drive)");
+    snprintf(record, sizeof(record), "%s/app/PPSA99008/mount_img.lnk", user);
+    write_file(record, "/mnt/usb0/Nightshade.ffpkg", 26);
+    snprintf(folder, sizeof(folder), "%s/app/PPSA99008", user);
+    param(folder, "PPSA99008", "01.010.002");
+    found = apps_find("PPSA99008", user, own, homebrew);
+    EXPECT(found.image && strcmp(found.version, "01.010.002") == 0, "an app installed as an image");
+
+    uint64_t bytes = 0;
+    snprintf(folder, sizeof(folder), "%s/PPSA99003", homebrew);
+    const uint64_t param_size = (uint64_t)strlen("{\"titleId\": \"PPSA99003\", \"contentVersion\": \"01.002.000\"}");
+    EXPECT(apps_folder_size(folder, &bytes) && bytes == 10 + param_size, "an app's size: every file under its folder");
+
+    char version[12];
+    EXPECT(apps_tag_version("v1.010.002", version) == TAG_EXACT && strcmp(version, "01.010.002") == 0,
+           "Nightshade's tag");
+    EXPECT(apps_tag_version("01.002.001", version) == TAG_EXACT && strcmp(version, "01.002.001") == 0,
+           "a content version as the tag");
+    EXPECT(apps_tag_version("1.6.1", version) == TAG_LIKELY && strcmp(version, "01.006.001") == 0,
+           "Mandrake's tag: likely 01.006.001");
+    EXPECT(apps_tag_version("nightly-2026", version) == TAG_NONE, "a tag that names no version");
+
+    Installed none;
+    memset(&none, 0, sizeof(none));
+    Installed old = {"/data/homebrew/PPSA99003", "01.002.000", false};
+    Installed same = {"/data/homebrew/PPSA99003", "01.002.001", false};
+    Installed image = {"/user/app/PPSA99003", "01.002.000", true};
+    EXPECT(apps_decide(&none, true, "01.002.001") == OFFER_GET, "not installed: get it");
+    EXPECT(apps_decide(&none, false, "") == OFFER_NONE, "not installed, no release: nothing");
+    EXPECT(apps_decide(&old, true, "01.002.001") == OFFER_UPDATE, "an older one: update it");
+    EXPECT(apps_decide(&same, true, "01.002.001") == OFFER_CURRENT, "the same: current");
+    EXPECT(apps_decide(&same, true, "v1.002.000") == OFFER_CURRENT, "a newer one installed: current");
+    EXPECT(apps_decide(&image, true, "01.002.001") == OFFER_NONE, "an image: nothing here");
+    EXPECT(apps_decide(&old, true, "nightly") == OFFER_UPDATE, "a tag with no version: offered all the same");
+
+    CatalogApp app;
+    memset(&app, 0, sizeof(app));
+    snprintf(app.title_id, sizeof(app.title_id), "PPSA99003");
+    snprintf(app.name, sizeof(app.name), "Physalis");
+    github_release_asset release;
+    memset(&release, 0, sizeof(release));
+    snprintf(release.tag, sizeof(release.tag), "01.002.001");
+    snprintf(release.sha256, sizeof(release.sha256), "3e1ddd6402f2a19ab3feee249ae2cb9f8a7a2894e64868347990a3bda785bf6a");
+    snprintf(release.url, sizeof(release.url),
+             "https://github.com/Oliv3rmoon/Physalis/releases/download/01.002.001/PPSA99003.zip");
+    release.size = 40713597;
+    self_update_offer offer;
+    EXPECT(apps_make_offer(&app, &release, &none, "PPSA76526", &offer) && strcmp(offer.installed, "none") == 0 &&
+               strcmp(offer.available, "01.002.001") == 0 && strcmp(offer.beside, "PPSA76526") == 0 &&
+               offer.size == 40713597 && strcmp(offer.sha256, release.sha256) == 0,
+           "the offer for a new app: beside Solanum");
+    EXPECT(apps_make_offer(&app, &release, &old, "PPSA76526", &offer) && strcmp(offer.installed, "01.002.000") == 0,
+           "the offer for an update: the installed version");
+    snprintf(release.tag, sizeof(release.tag), "1.6.1");
+    EXPECT(apps_make_offer(&app, &release, &old, "PPSA76526", &offer) && strcmp(offer.available, "any") == 0,
+           "a likely version is the ZIP's to say");
+    EXPECT(!apps_make_offer(&app, &release, &image, "PPSA76526", &offer), "no offer for an image");
+    EXPECT(!apps_make_offer(&app, &release, &none, "PPSA99003", &offer), "no offer of the asking app itself");
+    release.sha256[0] = '\0';
+    EXPECT(!apps_make_offer(&app, &release, &none, "PPSA76526", &offer), "no offer without a SHA-256");
+    snprintf(release.sha256, sizeof(release.sha256), "3e1ddd6402f2a19ab3feee249ae2cb9f8a7a2894e64868347990a3bda785bf6a");
+    snprintf(release.url, sizeof(release.url), "https://example.com/PPSA99003.zip");
+    EXPECT(!apps_make_offer(&app, &release, &none, "PPSA76526", &offer), "no offer from anywhere but GitHub");
+}
+
+/* ---------------------------------------------------------------- opening */
+
+static void check_launch(void)
+{
+    char reason[200];
+    FakeHelper payload = {"waiting\n", 0, NULL, 0, 0, 0};
+    self_update_channel channel = {helper_send, helper_receive, helper_close, &payload};
+    EXPECT(apps_ask_launch(&channel, "PPSA99003", "PPSA76526", reason, sizeof(reason)) &&
+               payload.sent_length == 25 && memcmp(payload.sent, "PSL1\nPPSA99003\nPPSA76526\n", 25) == 0,
+           "the launch payload is asked to open the app once Solanum closes");
+    free(payload.sent);
+    FakeHelper refused = {"fail The console doesn't list the app yet\n", 0, NULL, 0, 0, 0};
+    channel.user = &refused;
+    EXPECT(!apps_ask_launch(&channel, "PPSA99003", "PPSA76526", reason, sizeof(reason)) &&
+               strcmp(reason, APPS_NOT_LISTED) == 0,
+           "an app the console doesn't list yet");
+    free(refused.sent);
+    FakeHelper silent = {"", 0, NULL, 0, 0, 0};
+    channel.user = &silent;
+    EXPECT(!apps_ask_launch(&channel, "PPSA99003", "PPSA76526", reason, sizeof(reason)) &&
+               strcmp(reason, "The launch payload didn't answer") == 0,
+           "a payload that doesn't answer");
+    free(silent.sent);
+}
+
+/* ---------------------------------------------------------------- the hidden ones */
+
+static int feed(Konami *k, const int *buttons, int count)
+{
+    int done = 0;
+    for (int i = 0; i < count; ++i)
+        done += konami_feed(k, buttons[i] < 0 ? 0 : BIT(buttons[i]));
+    return done;
+}
+
+static void check_konami(void)
+{
+    static const int CODE[] = {BTN_UP,    BTN_UP,   BTN_DOWN,  BTN_DOWN,   BTN_LEFT,
+                               BTN_RIGHT, BTN_LEFT, BTN_RIGHT, BTN_CIRCLE, BTN_CROSS};
+    Konami k;
+    konami_reset(&k);
+    int fired = 0;
+    for (int i = 0; i < 10; ++i)
+    {
+        const bool done = konami_feed(&k, BIT(CODE[i]));
+        if (done)
+            fired = i + 1;
+    }
+    EXPECT(fired == 10, "the code, on its last press (Cross)");
+    EXPECT(!konami_feed(&k, BIT(BTN_CROSS)), "a Cross after it is only a Cross");
+
+    konami_reset(&k);
+    static const int EXTRA_UP[] = {BTN_UP,   BTN_UP,    BTN_UP,   BTN_DOWN,  BTN_DOWN,   BTN_LEFT,
+                                   BTN_RIGHT, BTN_LEFT, BTN_RIGHT, BTN_CIRCLE, BTN_CROSS};
+    EXPECT(feed(&k, EXTRA_UP, 11) == 1, "a held Up that repeats once more still counts");
+
+    konami_reset(&k);
+    static const int BROKEN[] = {BTN_UP,    BTN_UP,     BTN_DOWN,   BTN_DOWN,  BTN_LEFT,  BTN_RIGHT,
+                                 BTN_LEFT,  BTN_SQUARE, BTN_RIGHT,  BTN_CIRCLE, BTN_CROSS};
+    EXPECT(feed(&k, BROKEN, 11) == 0, "another button in the middle breaks it");
+
+    konami_reset(&k);
+    static const int WRONG_END[] = {BTN_UP,   BTN_UP,    BTN_DOWN, BTN_DOWN,  BTN_LEFT,
+                                    BTN_RIGHT, BTN_LEFT, BTN_RIGHT, BTN_CROSS, BTN_CIRCLE};
+    EXPECT(feed(&k, WRONG_END, 10) == 0, "Cross then Circle is not it");
+
+    konami_reset(&k);
+    EXPECT(feed(&k, CODE, 8) == 0 && !konami_feed(&k, BIT(BTN_CIRCLE) | BIT(BTN_CROSS)) &&
+               !konami_feed(&k, BIT(BTN_CROSS)),
+           "Circle and Cross pressed together are not Circle then Cross");
+
+    konami_reset(&k);
+    static const int RESTARTED[] = {BTN_UP,    BTN_UP,     BTN_DOWN, BTN_UP,    BTN_UP,    BTN_DOWN,  BTN_DOWN,
+                                    BTN_LEFT,  BTN_RIGHT,  BTN_LEFT, BTN_RIGHT, BTN_CIRCLE, BTN_CROSS};
+    EXPECT(feed(&k, RESTARTED, 13) == 1, "started over in the middle of a try");
+
+    konami_reset(&k);
+    EXPECT(feed(&k, CODE, 10) == 1 && feed(&k, CODE, 10) == 1, "twice in a row, twice");
+    EXPECT(!konami_feed(&k, 0), "no press is nothing");
+}
+
+static void check_pick(void)
+{
+    uint32_t state = apps_seed(123456789);
+    int seen[8] = {0};
+    int previous = -1;
+    int repeats = 0;
+    EXPECT(apps_pick(0, -1, &state) == -1, "no lines: none");
+    EXPECT(apps_pick(1, 0, &state) == 0 && apps_pick(1, -1, &state) == 0, "one line: that one, again");
+    for (int i = 0; i < 4000; ++i)
+    {
+        const int pick = apps_pick(8, previous, &state);
+        if (pick < 0 || pick >= 8)
+        {
+            EXPECT(0, "a pick out of range");
+            return;
+        }
+        repeats += pick == previous;
+        ++seen[pick];
+        previous = pick;
+    }
+    EXPECT(repeats == 0, "never the same line twice in a row");
+    int fewest = 4000, most = 0;
+    for (int i = 0; i < 8; ++i)
+    {
+        fewest = seen[i] < fewest ? seen[i] : fewest;
+        most = seen[i] > most ? seen[i] : most;
+    }
+    EXPECT(fewest > 350 && most < 650, "every line comes up, about as often as the others");
+    EXPECT(apps_seed(1) != apps_seed(2) && apps_seed(0) != 0, "seeds differ, and are never 0");
+    uint32_t a = apps_seed(42), b = apps_seed(42);
+    EXPECT(apps_pick(10, -1, &a) == apps_pick(10, -1, &b), "the same seed picks the same");
+    EXPECT(apps_pick(8, 99, &state) >= 0, "a previous one out of range is no previous");
+}
+
+int main(int argc, char **argv)
+{
+    if (argc != 3)
+    {
+        fprintf(stderr, "usage: store-check <fixtures> <scratch>\n");
+        return 2;
+    }
+    fixtures = argv[1];
+    scratch = argv[2];
+    check_catalog();
+    check_release();
+    check_checksums();
+    check_resume();
+    check_apps();
+    check_launch();
+    check_konami();
+    check_pick();
+    printf("%s store: %d checks, %d failed\n", failed ? "FAIL" : "PASS", passed + failed, failed);
+    return failed ? 1 : 0;
+}

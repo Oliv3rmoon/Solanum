@@ -221,6 +221,9 @@ static int read_pin(const char *json, size_t length, const CatalogApp *app, Cata
         update_check_json_string(json, length, "sha256", pin->sha256, sizeof(pin->sha256)) != 1 ||
         !read_u64(json, length, "size", &pin->size))
         return 0;
+    if (update_check_json_string(json, length, "content_version", pin->content, sizeof(pin->content)) != 1 ||
+        !update_check_version_parse(pin->content, NULL))
+        pin->content[0] = '\0';
     return is_hex64(pin->sha256) && pin->size > 0 && pin->size <= 0x80000000ull &&
            github_release_asset_name(app->asset, pin->tag, expected, sizeof(expected)) &&
            strcmp(expected, pin->asset) == 0;
@@ -240,6 +243,9 @@ static void read_extras(const char *json, size_t length, int index, const char *
         if (found != 0)
             say(log, user, "catalog: app %d (%s): its author is not text, or too long; left out", index, label);
     }
+    for (char *c = app->author; *c; ++c)
+        if ((unsigned char)*c < 0x20 || (unsigned char)*c == 0x7f)
+            *c = ' ';
     if ((found = update_check_json_string(json, length, "data", app->data, sizeof(app->data))) == 1)
     {
         if (!catalog_data_folder_valid(app->data))
@@ -410,6 +416,14 @@ static int read_app(const char *json, size_t length, int index, const Catalog *k
         why = "checksums can't name a release's file";
     else if (!has_text(app->license))
         why = "it has no license";
+    /* Text shown and sent on: no control characters (a line end in a name would shift the helper's lines). */
+    {
+        char *texts[] = {app->name, app->summary, app->license};
+        for (size_t t = 0; t < sizeof(texts) / sizeof(texts[0]); ++t)
+            for (char *c = texts[t]; *c; ++c)
+                if ((unsigned char)*c < 0x20 || (unsigned char)*c == 0x7f)
+                    *c = ' ';
+    }
     if (why == NULL)
         for (int i = 0; i < kept->app_count && why == NULL; ++i)
         {

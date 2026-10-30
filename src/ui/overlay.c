@@ -138,6 +138,13 @@ bool overlay_active(void)
     return kind != NONE;
 }
 
+void overlay_reset(void)
+{
+    kind = NONE;
+    chosen_id = chosen_item = -1;
+    answered_id = -1;
+}
+
 static void close_it(void)
 {
     kind = NONE;

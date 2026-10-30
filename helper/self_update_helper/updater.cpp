@@ -698,6 +698,17 @@ bool swap_entries(const std::string &target, const std::string &staged, const st
 
 namespace
 {
+// Solanum: the work folder <drive>/self-update/<title>. Several helpers can work at once (the store's queue), and
+// one that finishes removes <drive>/self-update when it is empty, which can fall between another's making it and
+// making its own folder in it: tried again then.
+bool make_work(const std::string &base, const std::string &work)
+{
+    for (int attempt = 0; attempt < 5; ++attempt)
+        if (make_directory(base) && make_directory(work))
+            return true;
+    return false;
+}
+
 // ProsperoEden: another app's release (Nightshade's Apps, self_update_protocol.h): put in a new
 // folder beside the asking app's, or in place of its own folder's entries when it has one. The
 // asking app stays open: the console runs one app at a time, so the title is not running and
@@ -817,8 +828,7 @@ int install(const std::shared_ptr<Session> &shared, const std::string &title, co
         (void)rmdir(base.c_str());
     };
     std::uint64_t free_bytes = 0;
-    if (!remove_tree(work) || !make_directory(base) || !make_directory(work) ||
-        !same_filesystem(fresh ? parent : target, work))
+    if (!remove_tree(work) || !make_work(base, work) || !same_filesystem(fresh ? parent : target, work))
     {
         clean();
         return refuse("The install's work folder couldn't be made");
@@ -938,32 +948,33 @@ int remove_app(const std::shared_ptr<Session> &shared)
         return refuse("More than one copy of the app is installed");
     if (found == -3)
         return refuse("The installed apps couldn't all be looked at");
-    std::string removed = "-";
-    if (found == 1)
-    {
-        if (installed != "any" && copy.version != installed)
-            return refuse("The installed app isn't the version that was asked about");
-        const std::string drive = drive_root(environment.drives, copy.path);
-        const bool is_root = std::find(environment.roots.begin(), environment.roots.end(), copy.path) !=
-                             environment.roots.end();
-        if (drive.empty() || is_root || copy.path == drive)
-            return refuse("The app's folder can't be removed: " + copy.path);
-        session.say("removing\n");
-        // Out of the way at once (a rename on its own drive), then deleted.
-        const std::string base = drive + "/self-update", gone = base + "/" + title + "-removed";
-        bool moved = false;
-        if (make_directory(base) && remove_tree(gone))
-            moved = rename(copy.path.c_str(), gone.c_str()) == 0;
-        if (!moved && !remove_tree(copy.path))
-            return refuse("The app's folder couldn't be removed: " + copy.path);
-        if (moved)
-            (void)remove_tree(gone);
-        (void)rmdir(base.c_str());
-        removed = copy.path;
-        session.log("removed " + title + " " + copy.version + " from " + copy.path);
-    }
-    else
-        session.log("remove " + title + ": no folder found; its home-screen entry is asked to go all the same");
+    // Only an app found where it is installed is removed, and only its own folder: never a root, a drive, or a
+    // folder that holds a root (an app's param.json in /mnt/usb0/etaHEN would otherwise take etaHEN/games along).
+    if (found == 0)
+        return refuse("The app's folder wasn't found");
+    if (installed != "any" && copy.version != installed)
+        return refuse("The installed app isn't the version that was asked about");
+    const std::string drive = drive_root(environment.drives, copy.path);
+    bool holds_root = false;
+    for (const auto &root : environment.roots)
+        holds_root = holds_root || root == copy.path ||
+                     (root.size() > copy.path.size() && root.compare(0, copy.path.size(), copy.path) == 0 &&
+                      root[copy.path.size()] == '/');
+    if (drive.empty() || holds_root || copy.path == drive)
+        return refuse("The app's folder can't be removed: " + copy.path);
+    session.say("removing\n");
+    // Out of the way at once (a rename on its own drive), then deleted.
+    const std::string base = drive + "/self-update", gone = base + "/" + title + "-removed";
+    bool moved = false;
+    if (make_directory(base) && remove_tree(gone))
+        moved = rename(copy.path.c_str(), gone.c_str()) == 0;
+    if (!moved && !remove_tree(copy.path))
+        return refuse("The app's folder couldn't be removed: " + copy.path);
+    if (moved)
+        (void)remove_tree(gone);
+    (void)rmdir(base.c_str());
+    const std::string removed = copy.path;
+    session.log("removed " + title + " " + copy.version + " from " + copy.path);
 
     // Its place on the home screen, as the console's own uninstall takes it away.
     const int code = environment.unregister ? environment.unregister(title) : -1;
@@ -1092,8 +1103,7 @@ int run(const Environment &environment, const Io &io)
         (void)rmdir(base.c_str());
     };
     std::uint64_t free_bytes = 0;
-    if (!remove_tree(work) || !make_directory(base) || !make_directory(work) ||
-        !same_filesystem(target, work))
+    if (!remove_tree(work) || !make_work(base, work) || !same_filesystem(target, work))
     {
         clean();
         session.say("fail The update's work folder couldn't be made\n");

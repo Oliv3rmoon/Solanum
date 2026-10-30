@@ -48,13 +48,13 @@
  *           <its data folder, /data/<name>, or ->, <its name>,
  *           <the asking app's title ID>                    (seven lines)
  *   helper  removing                                     (once its folder is found)
- *   helper  removed <folder, or - when none was found> <home-screen result, 8 hex digits>
- *                                                        or  fail <reason>
+ *   helper  removed <folder> <home-screen result, 8 hex digits>   or  fail <reason>
  *
- * The helper removes the title's one installed folder (it must be at that
- * version and not the running app's), asks the console's app-install service to
- * take the title off the home screen, and removes the data folder when one is
- * named. "00000000" is a home screen that let the title go.
+ * The helper removes the title's one installed folder (it must be found, be at
+ * that version, not be the running app's, and hold no folder apps are installed
+ * in), asks the console's app-install service to take the title off the home
+ * screen, and removes the data folder when one is named. "00000000" is a home
+ * screen that let the title go.
  */
 #ifndef PS5_BOILERPLATE_SELF_UPDATE_PROTOCOL_H
 #define PS5_BOILERPLATE_SELF_UPDATE_PROTOCOL_H

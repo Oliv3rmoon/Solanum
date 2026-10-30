@@ -51,6 +51,7 @@ typedef struct
     char asset[128];   /* the file's name */
     uint64_t size;
     char sha256[65];   /* lowercase */
+    char content[12];  /* the contentVersion of the app in it, as the workflow read it; empty: not known */
 } CatalogPin;
 
 typedef struct

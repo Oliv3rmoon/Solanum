@@ -569,12 +569,26 @@ void uninstall()
            "remove: Solanum is left as it was");
     expect(console.notices.size() == 1 && console.notices[0] == "Some app was uninstalled.", "remove: its notification");
 
-    // Its folder already gone by hand: the home screen is still asked; data kept when none is named.
+    // Its folder isn't there (gone by hand, or never this title's): nothing is touched, not even its data.
     write(console.data / "kept/settings.ini", "x");
     App &gone = new_app();
-    expect(console.talk(gone, remove_request("PPSA99003", "any", "-")) == 0 && gone.last() == "removed - 00000000" &&
-               console.unregistered.size() == 2 && fs::exists(console.data / "kept/settings.ini"),
-           "remove: an app whose folder is gone still leaves the home screen");
+    expect(console.talk(gone, remove_request("PPSA99003", "any", "/data/kept")) == 1 &&
+               gone.last() == "fail The app's folder wasn't found" && console.unregistered.size() == 1 &&
+               fs::exists(console.data / "kept/settings.ini"),
+           "remove: an app whose folder isn't found: refused, its home-screen entry and data left alone");
+
+    // A folder that holds a folder apps are installed in is never removed.
+    const fs::path usb = console.base / "mnt/usb0";
+    console.environment.drives.push_back(usb.string());
+    console.environment.roots.push_back(usb.string());
+    console.environment.roots.push_back((usb / "etaHEN/games").string());
+    console.app("PPSA99004", "01.000.000", usb / "etaHEN");
+    write(usb / "etaHEN/games/PPSA11111/eboot.bin", "a game the player keeps");
+    App &holder = new_app();
+    expect(console.talk(holder, remove_request("PPSA99004", "01.000.000", "-")) == 1 &&
+               holder.last() == "fail The app's folder can't be removed: " + (usb / "etaHEN").string() &&
+               fs::exists(usb / "etaHEN/games/PPSA11111/eboot.bin"),
+           "remove: a folder that holds a folder apps are installed in is refused");
 
     const auto refused = [&](const std::vector<std::string> &request, const std::string &why, const std::string &what)
     {

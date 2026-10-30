@@ -776,7 +776,15 @@ static void downloads(uint32_t pressed)
     int n = store_jobs(list, STORE_JOBS);
     const int live = n;
     for (int i = 0; i < app.history_count && n < STORE_JOBS + APP_HISTORY; ++i)
-        list[n++] = app.history[i];
+    {
+        list[n] = app.history[i];
+        /* the app by its title in the catalog as it is now: a refresh may have moved it */
+        list[n].app = -1;
+        for (int a = 0; a < store_catalog()->app_count; ++a)
+            if (strcmp(store_catalog()->apps[a].title_id, list[n].title) == 0)
+                list[n].app = a;
+        ++n;
+    }
     if (downloads_row >= n)
         downloads_row = n ? n - 1 : 0;
     if ((pressed & (BIT(BTN_UP) | BIT(BTN_DOWN))) && n)

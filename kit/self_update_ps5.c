@@ -270,7 +270,9 @@ static void channel_close(void *user)
  * app's folder (Nightshade's Apps opens an app with app-launch.elf, apps.h); the helper below. */
 int self_update_open_payload(const char *path, self_update_channel *channel)
 {
-    static unsigned char buffer[65536]; /* one at a time: the app sends one payload at a time */
+    /* Solanum: its own buffer each time: several installs, an uninstall and the launch payload can be sent at
+     * once (the store's queue), and one shared buffer would mix their bytes. */
+    unsigned char *buffer = (unsigned char *)malloc(65536);
     /* The helper reports five times a second while it works; this long a silence means it is
      * gone. */
     const int io_timeout_us = 60000000;
@@ -281,9 +283,14 @@ int self_update_open_payload(const char *path, self_update_channel *channel)
     int program;
     int socket;
     int sent = 0;
+    if (buffer == NULL)
+        return 0;
     program = sceKernelOpen(path, O_RDONLY, 0);
     if (program < 0)
+    {
+        free(buffer);
         return 0;
+    }
     socket = sceNetSocket("self_update", 2, 1, 6);
     if (socket >= 0 &&
         sceNetSetsockopt(socket, 0xffff, 0x1105, &io_timeout_us, sizeof(io_timeout_us)) >= 0 &&
@@ -295,7 +302,7 @@ int self_update_open_payload(const char *path, self_update_channel *channel)
         sent = 1;
         for (;;)
         {
-            const int64_t count = sceKernelRead(program, buffer, sizeof(buffer));
+            const int64_t count = sceKernelRead(program, buffer, 65536);
             size_t done = 0;
             if (count == 0)
                 break;
@@ -317,6 +324,7 @@ int self_update_open_payload(const char *path, self_update_channel *channel)
         }
     }
     (void)sceKernelClose(program);
+    free(buffer);
     if (!sent)
     {
         if (socket >= 0)

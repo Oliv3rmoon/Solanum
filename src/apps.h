@@ -82,6 +82,10 @@ typedef enum
     OFFER_CURRENT
 } Offer;
 Offer apps_decide(const Installed *installed, bool found, const char *tag);
+/* 0.2.0: the same for a release whose content version the catalog's workflow read (release->content): that version
+ * is compared with the installed one, whatever the tag says ("v4.0", "build25" and tags of another numbering than the
+ * app's contentVersion are told right). Without it, apps_decide by the tag. */
+Offer apps_decide_release(const Installed *installed, bool found, const github_release_asset *release);
 
 /* The self-update kit's offer that installs the release (self_update_start): beside the asking app's folder
  * when the app isn't installed, in place of its own entries when it is. False when there is nothing to

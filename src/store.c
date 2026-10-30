@@ -123,6 +123,10 @@ const StoreApp *store_app(int index)
 bool store_update_wanted(int index)
 {
     const StoreApp *s = store_app(index);
+    /* A custom catalog's app is updated only when Solanum installed it from there, with the player's yes: never one
+     * found installed some other way (a third-party catalog doesn't get to replace it). */
+    if (index >= 0 && index < catalog.app_count && catalog.apps[index].source > 0 && s->by != BY_SOLANUM)
+        return false;
     return s->checked && s->looked && apps_update_wanted(s->offer, s->hold, s->skip, s->release.tag);
 }
 
@@ -255,6 +259,7 @@ static void publish(const Catalog *read, CatalogState state, const int added[CUS
     memcpy(custom_added, added, sizeof(custom_added));
     memcpy(custom_hidden, hidden, sizeof(custom_hidden));
     catalog_state = state;
+    checking = true; /* until ask_github has its answers: nothing is final before (automatic updates wait for it) */
     memset(&versions, 0, sizeof(versions));
     ++generation;
     store_unlock();
@@ -419,12 +424,12 @@ static void look(void)
             apps[i].kept = kept;
             if (kept)
                 apps[i].previous = previous;
-            apps[i].offer = apps[i].checked ? (int)apps_decide(&found, apps[i].reason == GITHUB_RELEASE_NEWER,
-                                                                  apps[i].release.tag)
+            apps[i].offer = apps[i].checked ? (int)apps_decide_release(&found, apps[i].reason == GITHUB_RELEASE_NEWER,
+                                                                          &apps[i].release)
                                             : OFFER_NONE;
             /* An app the catalog lists, installed some other way: Solanum looks after it from now on (its updates,
              * its roll back once it has one, its uninstall). */
-            if (found.folder[0] && !found.image && strcmp(titles[i], NP_TITLE_ID) != 0)
+            if (found.folder[0] && !found.image && strcmp(titles[i], NP_TITLE_ID) != 0 && catalog.apps[i].source == 0)
             {
                 AppPrefs *prefs = prefs_get(titles[i], true);
                 if (prefs && prefs->by == BY_UNKNOWN)
@@ -461,7 +466,7 @@ static void from_pins(void)
         apps[i].reason = GITHUB_RELEASE_NEWER;
         apps[i].source = FROM_CATALOG;
         apps[i].checked = true;
-        apps[i].offer = apps[i].looked ? (int)apps_decide(&apps[i].installed, true, release.tag) : OFFER_NONE;
+        apps[i].offer = apps[i].looked ? (int)apps_decide_release(&apps[i].installed, true, &release) : OFFER_NONE;
     }
     store_unlock();
 }
@@ -557,9 +562,9 @@ static void ask_github(void)
                     apps[i].source = FROM_GITHUB;
                     apps[i].checked = true;
                 }
-                apps[i].offer = apps[i].looked ? (int)apps_decide(&apps[i].installed,
-                                                                  apps[i].reason == GITHUB_RELEASE_NEWER,
-                                                                  apps[i].release.tag)
+                apps[i].offer = apps[i].looked ? (int)apps_decide_release(&apps[i].installed,
+                                                                          apps[i].reason == GITHUB_RELEASE_NEWER,
+                                                                          &apps[i].release)
                                                : OFFER_NONE;
             }
             store_unlock();
@@ -1333,6 +1338,8 @@ bool store_uninstall(int index, bool data, char *reason, size_t size)
     SDL_LockMutex(jobs_lock);
     if (index < 0 || index >= catalog.app_count || !apps[index].looked)
         str_copy(reason, size, "The app isn't known yet.");
+    else if (!apps[index].installed.folder[0])
+        str_copy(reason, size, "The app isn't installed.");
     else if (strcmp(catalog.apps[index].title_id, NP_TITLE_ID) == 0)
         str_copy(reason, size, "Solanum doesn't uninstall itself. Delete its folder by FTP.");
     else if (apps[index].installed.image)

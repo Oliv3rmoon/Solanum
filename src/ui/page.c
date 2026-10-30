@@ -80,6 +80,7 @@ void page_open(int index)
     progress_shown = 0;
     generation = store_generation();
     installing_after_agree = false;
+    overlay_reset(); /* nothing asked on another app's page is answered on this one */
     char url[200];
     uint8_t temp[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
     snprintf(url, sizeof(url), "https://github.com/%s", index >= 0 && index < store_catalog()->app_count
@@ -481,6 +482,7 @@ void page_screen(uint32_t pressed)
     /* A new catalog may have moved or dropped the app: back to the lists. */
     if (generation != store_generation() || index < 0 || index >= catalog->app_count)
     {
+        overlay_reset(); /* a question about the app it showed goes with it */
         app.screen = SCREEN_STORE;
         app_backdrop();
         return;

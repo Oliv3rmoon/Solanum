@@ -407,6 +407,18 @@ Offer apps_decide(const Installed *installed, bool found, const char *tag)
     return !comparable || order > 0 ? OFFER_UPDATE : OFFER_CURRENT;
 }
 
+Offer apps_decide_release(const Installed *installed, bool found, const github_release_asset *release)
+{
+    int comparable = 0;
+    if (!release || !release->content[0] || !update_check_version_parse(release->content, NULL) ||
+        !installed->folder[0] || installed->image || !found)
+        return apps_decide(installed, found, release ? release->tag : NULL);
+    if (!update_check_version_parse(installed->version, NULL))
+        return OFFER_UPDATE; /* what is installed can't be told: as apps_decide does with a tag that names none */
+    const int order = update_check_version_compare(release->content, installed->version, &comparable);
+    return !comparable || order > 0 ? OFFER_UPDATE : OFFER_CURRENT;
+}
+
 bool apps_make_offer(const CatalogApp *app, const github_release_asset *release, const Installed *installed,
                      const char *asking, self_update_offer *offer)
 {
@@ -419,6 +431,12 @@ bool apps_make_offer(const CatalogApp *app, const github_release_asset *release,
         (installed->folder[0] && !update_check_version_parse(installed->version, NULL)))
         return false;
     exact = apps_tag_version(release->tag, version) == TAG_EXACT;
+    /* the version the catalog's workflow read in the file: exact, and the helper checks the ZIP holds it */
+    if (release->content[0] && update_check_version_parse(release->content, NULL))
+    {
+        str_copy(version, sizeof(version), release->content);
+        exact = true;
+    }
     snprintf(offer->title, sizeof(offer->title), "%s", app->title_id);
     snprintf(offer->name, sizeof(offer->name), "%s", app->name);
     snprintf(offer->installed, sizeof(offer->installed), "%s", installed->folder[0] ? installed->version : "none");
@@ -463,6 +481,7 @@ bool apps_release_from_pin(const CatalogApp *app, int pin, github_release_asset 
     str_copy(out->tag, sizeof(out->tag), p->tag);
     str_copy(out->name, sizeof(out->name), p->asset);
     str_copy(out->sha256, sizeof(out->sha256), p->sha256);
+    str_copy(out->content, sizeof(out->content), p->content);
     out->size = p->size;
     out->pinned = 1;
     if (!download_url(out->url, sizeof(out->url), app->repo, p->tag, p->asset))
@@ -513,6 +532,7 @@ int apps_check_pin(const CatalogApp *app, int reason, github_release_asset *asse
         str_copy(asset->sha256, sizeof(asset->sha256), app->pins[pin].sha256);
     }
     asset->pinned = 1;
+    str_copy(asset->content, sizeof(asset->content), app->pins[pin].content);
     return GITHUB_RELEASE_NEWER;
 }
 

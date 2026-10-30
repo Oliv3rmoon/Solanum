@@ -959,7 +959,7 @@ static const char PINNED[] =
     "\"attested\":false,\"license\":\"GPL-2.0-or-later\",\"author\":\"Notedop\",\"stars\":42,"
     "\"tags\":[\"media-player\",\"kodi\",\"Bad Tag\",\"video\"],\"data\":\"/data/kodi\","
     "\"release\":{\"tag\":\"v22.0.1\",\"asset\":\"Kodi-22.0.1.zip\",\"size\":1000,"
-    "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
+    "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"content_version\":\"22.000.001\","
     "\"published_at\":\"2026-10-20T10:00:00Z\",\"notes\":\"## Fixed\\n- **Faster** start\"},"
     "\"pins\":[{\"tag\":\"v22.0.0\",\"asset\":\"Kodi-22.0.0.zip\",\"size\":900,"
     "\"sha256\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\"},"
@@ -1003,8 +1003,30 @@ static void check_pins(void)
                    0 &&
                release.size == 1000 && strstr(release.notes, "Faster") && !strstr(release.notes, "**"),
            "the pinned release, its address made from the repository, its notes laid out");
-    EXPECT(apps_release_from_pin(kodi, 1, &release) && strcmp(release.tag, "v22.0.0") == 0 && !release.notes[0],
+    EXPECT(apps_release_from_pin(kodi, 1, &release) && strcmp(release.tag, "v22.0.0") == 0 && !release.notes[0] &&
+               !release.content[0],
            "an older pin");
+
+    /* The content version the workflow read decides, whatever the tag says. */
+    github_release_asset newest;
+    apps_release_from_pin(kodi, 0, &newest);
+    Installed older = {.folder = "/data/homebrew/PPSA99420", .version = "22.000.000"};
+    Installed same = {.folder = "/data/homebrew/PPSA99420", .version = "22.000.001"};
+    Installed later = {.folder = "/data/homebrew/PPSA99420", .version = "23.000.000"};
+    Installed none = {.folder = ""};
+    EXPECT(strcmp(newest.content, "22.000.001") == 0 && apps_decide_release(&older, true, &newest) == OFFER_UPDATE &&
+               apps_decide_release(&same, true, &newest) == OFFER_CURRENT &&
+               apps_decide_release(&later, true, &newest) == OFFER_CURRENT &&
+               apps_decide_release(&none, true, &newest) == OFFER_GET,
+           "the pinned release's content version against the installed one");
+    github_release_asset odd = newest;
+    snprintf(odd.tag, sizeof(odd.tag), "build25");
+    EXPECT(apps_decide_release(&same, true, &odd) == OFFER_CURRENT && apps_decide(&same, true, "build25") == OFFER_UPDATE,
+           "a tag that names no version is told right by its content version (by the tag alone it can't be)");
+    self_update_offer offer;
+    EXPECT(apps_make_offer(kodi, &newest, &older, "PPSA76526", &offer) && strcmp(offer.available, "22.000.001") == 0 &&
+               strcmp(offer.installed, "22.000.000") == 0,
+           "the offer names the content version, which the helper checks the ZIP holds");
     EXPECT(!apps_release_from_pin(jelly, 0, &release), "no pin, no release");
     EXPECT(apps_pin_for(kodi, "v22.0.0", "Kodi-22.0.0.zip") == 1 && apps_pin_for(kodi, "v9", NULL) == -1,
            "a pin by its tag");

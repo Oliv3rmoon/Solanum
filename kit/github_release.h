@@ -216,6 +216,9 @@ extern "C"
            downloaded and hashed it), and any checksum file or digest agrees; the only source of
            the SHA-256 when the release has neither. */
         int pinned;
+        /* Solanum: the content version the catalog's workflow read in the pinned file's param.json; empty when it
+           isn't known (then the tag is all there is to go by). */
+        char content[12];
     } github_release_asset;
 
     /* Solanum: a release file's name from the catalog's pattern, where "{version}" stands for the

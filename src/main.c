@@ -1,5 +1,5 @@
 /*
- * Solanum - a store for open-source PS5 homebrew, a Nightshade app.
+ * Solanum - a store for PS5 homebrew from an open catalog, a Nightshade app.
  * SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
  * SPDX-License-Identifier: GPL-3.0-or-later
  *

@@ -5,7 +5,7 @@
 <h1 align="center">Solanum</h1>
 
 <p align="center">
-  <strong>The store for open-source PS5 homebrew. Install, update, roll back and uninstall apps from their own GitHub releases, each checked against a pinned SHA-256.</strong>
+  <strong>The store for PS5 homebrew. Install, update, roll back and uninstall apps from their own GitHub releases, each checked against a pinned SHA-256.</strong>
 </p>
 
 <p align="center">
@@ -16,17 +16,17 @@
   <a href="https://buymeacoffee.com/oliv3rmoon"><img src="https://img.shields.io/badge/buy%20me%20a%20coffee-0d0d0f?style=for-the-badge&logo=buymeacoffee&logoColor=e5484d" alt="Buy me a coffee"></a>
 </p>
 
-Solanum, named after the genus at the heart of the nightshade family, is a Nightshade app by **[Oliv3rmoon](https://github.com/Oliv3rmoon)**: a PS5 homebrew store for the 56 apps of the open catalog at [Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog), which is also on the web, with a page for each app: **<https://oliv3rmoon.github.io/Solanum-Catalog/>**. The latest release is **0.3.0**, a full release; what changed is in the [changelog](docs/CHANGELOG.md).
+Solanum, named after the genus at the heart of the nightshade family, is a Nightshade app by **[Oliv3rmoon](https://github.com/Oliv3rmoon)**: a PS5 homebrew store for the 159 apps of the open catalog at [Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog), which is also on the web, with a page for each app: **<https://oliv3rmoon.github.io/Solanum-Catalog/>**. The latest release is **0.3.0**, a full release; what changed is in the [changelog](docs/CHANGELOG.md).
 
 ## Why Solanum
 
-- **A catalog you can read.** 56 open-source apps: media players and clients for your own servers, emulators, engine ports that need your own game files, games with their own assets, and tools. Browse them by category (the Nightshade family first) or search by name, author or tag (`#emulator`, `#ps1`). Each has a page with what it does, its author, its stars on GitHub, its license, an **attested** badge when its own CI attests its builds, its newest version and notes, and a QR code to its source.
+- **A catalog you can read.** 159 apps, every one ProsperoStore's catalog lists with a public release except six (backup tools, a bundled game WAD, two releases with nothing installable to check): media players and clients for your own servers, emulators, decompilations, recompilations and engine ports that run your own game files, games with their own assets, AI apps and tools. Browse them by category (the Nightshade family first) or search by name, author or tag (`#emulator`, `#recomp`). Each has a page with what it does, its author, its stars on GitHub, its license (or **No license**), an **attested** badge when its own CI attests its builds, **Needs your own game files** for a port, **Pre-release** when its newest release is one, its newest version and notes, and a QR code to its source.
 - **Every release pinned.** The catalog's workflow downloads each app's newest release, checks it, and records its SHA-256, size and content version. Solanum checks every download against that pin, and against the release's checksum file or GitHub's digest when there is one, as it arrives and again before it is unpacked. One that doesn't match is never unpacked.
 - **Install, update, open.** Install puts an app in `/data/homebrew/<title ID>` beside Solanum, or on an extended or USB drive. Update replaces an older version's files and keeps your own. Open closes Solanum and starts the app.
 - **Undo anything.** **Versions** installs any release, an older one too; **Roll back** puts the version before back in one press, without downloading it; **Skip** an update or **Hold** an app's updates; **Uninstall** removes the app's folder and its home-screen entry, and its data folder when you tick it.
 - **Updates in one place.** One tab lists every installed app with a newer release, with its changelog beside it, and **Update all**. Switch on *Update apps by themselves* (Settings > Store) and they update after each refresh, except the ones you hold or skipped. Downloads wait in a queue, run up to three at once, and go on from where they stopped.
 - **Your catalogs, your music.** Add another catalog (a GitHub `owner/name` or an HTTPS `catalog.json`) in Settings > Catalogs; its apps are marked third-party and checked against GitHub alone. Put WAV, MP3 or OGG files in `/data/solanum/music` and they play behind the store, in order or shuffled, and fade out as an app opens.
-- **Free, open and quiet.** Ten languages, and a USB keyboard works as well as the controller. No ads, no account, no tracking and no server of its own; free software under the GPL. The catalog lists open-source homebrew only, and Solanum never offers game files.
+- **Free, open and quiet.** Ten languages, and a USB keyboard works as well as the controller. No ads, no account, no tracking and no server of its own; free software under the GPL. Solanum never offers game files: no release in the catalog carries game data, ROMs, BIOS or keys, and no backup tools are listed.
 
 ## Solanum and ProsperoStore
 
@@ -34,7 +34,9 @@ ProsperoStore is another PS5 homebrew store. Here is where they differ. A dash m
 
 | | Solanum | ProsperoStore |
 | --- | --- | --- |
-| Catalog | Solanum-Catalog: open on GitHub, 56 apps, also on the web | prosperostore.net, signed |
+| Catalog | Solanum-Catalog: open on GitHub, 159 apps, also on the web | prosperostore.net, signed |
+| Ports that need your own game files | Marked on the app's page and in the list | — |
+| Two apps of one title ID | Tells which is installed, asks before replacing it | — |
 | What checks a download | A SHA-256 pinned for every release, plus the release's checksum file or GitHub's digest | The signed catalog |
 | Install, update, uninstall | Yes | Yes |
 | Open an app from the store | Yes | No |
@@ -59,7 +61,7 @@ Solanum needs what the other Nightshade apps need: a HEN with the payload loader
 
 - **[Guide](docs/GUIDE.md):** [using it](docs/GUIDE.md#using-it) (the controls and the USB keyboard), [background music](docs/GUIDE.md#background-music), [how an install works](docs/GUIDE.md#how-an-install-works), [custom catalogs](docs/GUIDE.md#custom-catalogs), [updates](docs/GUIDE.md#updates) and [building from source](docs/GUIDE.md#building-from-source).
 - **[Changelog](docs/CHANGELOG.md)**, [Privacy policy](PRIVACY.md), [Third-party notices](THIRD_PARTY_NOTICES.md) and [Contributing](CONTRIBUTING.md).
-- **Add your app to the catalog:** open a pull request on [Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog), or see the website's [Submit your app](https://oliv3rmoon.github.io/Solanum-Catalog/submit/) page. Open-source homebrew only, with an OSI license and a GitHub release whose ZIP holds the app's folder. [The guide](docs/GUIDE.md#add-an-app-to-the-catalog) has the details.
+- **Add your app to the catalog:** open a pull request on [Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog), or see the website's [Submit your app](https://oliv3rmoon.github.io/Solanum-Catalog/submit/) page. A public repository and a GitHub release whose ZIP holds the app's folder, with no game files in it. [The guide](docs/GUIDE.md#add-an-app-to-the-catalog) has the details.
 
 ## Requests, bugs and support
 
@@ -79,7 +81,7 @@ Solanum is one of seven repositories in the Nightshade family, all by [Oliv3rmoo
 | [**Datura**](https://github.com/Oliv3rmoon/Datura) | Game streaming from your PC to the PS5 |
 | [**Mandrake**](https://github.com/Oliv3rmoon/Mandrake) | PS1 emulation, with two emulators |
 | [**Dulcamara**](https://github.com/Oliv3rmoon/Dulcamara) | RPG Maker 2000 and 2003 games, and Ren'Py visual novels |
-| **Solanum** (this repo) | A store for open-source PS5 homebrew, with its catalog [on the web](https://oliv3rmoon.github.io/Solanum-Catalog/) |
+| **Solanum** (this repo) | A store for PS5 homebrew, with its catalog [on the web](https://oliv3rmoon.github.io/Solanum-Catalog/) |
 | [**Belladonna**](https://github.com/Oliv3rmoon/Belladonna) | Nightshade's PS5 Vulkan driver |
 
 ## Built on

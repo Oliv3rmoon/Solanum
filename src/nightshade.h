@@ -14,7 +14,7 @@
 #define NP_NAME "Solanum"   /* identifiers: the User-Agent of network requests, the Vulkan application name */
 #define NP_TITLE "Solanum" /* what is shown on screen */
 #define NP_TITLE_ID "PPSA76526" /* SOLAN on a phone keypad */
-#define NP_VERSION "0.3.0"
+#define NP_VERSION "0.4.0"
 #define NP_DATA "/data/solanum" /* the data folder on the console */
 #define NP_PATH_MAX 512
 

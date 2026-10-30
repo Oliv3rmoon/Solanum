@@ -224,6 +224,12 @@ static int read_pin(const char *json, size_t length, const CatalogApp *app, Cata
     if (update_check_json_string(json, length, "content_version", pin->content, sizeof(pin->content)) != 1 ||
         !update_check_version_parse(pin->content, NULL))
         pin->content[0] = '\0';
+    if (update_check_json_string(json, length, "title_name", pin->title_name, sizeof(pin->title_name)) != 1)
+        pin->title_name[0] = '\0';
+    for (char *c = pin->title_name; *c; ++c)
+        if ((unsigned char)*c < 0x20 || (unsigned char)*c == 0x7f)
+            *c = ' ';
+    pin->prerelease = read_bool(json, length, "prerelease", 0) == 1;
     return is_hex64(pin->sha256) && pin->size > 0 && pin->size <= 0x80000000ull &&
            github_release_asset_name(app->asset, pin->tag, expected, sizeof(expected)) &&
            strcmp(expected, pin->asset) == 0;
@@ -260,6 +266,21 @@ static void read_extras(const char *json, size_t length, int index, const char *
         app->data[0] = '\0';
         if (found != 0)
             say(log, user, "catalog: app %d (%s): data is not text, or too long; left out", index, label);
+    }
+    if ((found = read_bool(json, length, "needs_game_files", 0)) < 0)
+        say(log, user, "catalog: app %d (%s): needs_game_files is not true or false; left out", index, label);
+    app->needs_game_files = found == 1;
+    {
+        char channel[16];
+        if ((found = update_check_json_string(json, length, "channel", channel, sizeof(channel))) == 1)
+        {
+            app->newest = strcmp(channel, "newest") == 0;
+            if (!app->newest)
+                say(log, user, "catalog: app %d (%s): channel \"%s\" is not one Solanum knows; its latest release is "
+                    "offered", index, label, channel);
+        }
+        else if (found != 0)
+            say(log, user, "catalog: app %d (%s): channel is not text; its latest release is offered", index, label);
     }
     if ((found = update_check_json_uint(json, length, "stars", &app->stars)) != 1)
     {
@@ -424,14 +445,33 @@ static int read_app(const char *json, size_t length, int index, const Catalog *k
                 if ((unsigned char)*c < 0x20 || (unsigned char)*c == 0x7f)
                     *c = ' ';
     }
+    /* 0.4.0: a later app may have the title ID of one listed before it, when it says so. */
+    if (why == NULL && (flag = update_check_json_string(json, length, "shares", app->shares, sizeof(app->shares))) != 1)
+    {
+        app->shares[0] = '\0';
+        if (flag != 0)
+            why = "shares is not an app's id";
+    }
     if (why == NULL)
         for (int i = 0; i < kept->app_count && why == NULL; ++i)
         {
             if (strcmp(kept->apps[i].id, app->id) == 0)
                 why = "its id is listed already";
-            else if (strcmp(kept->apps[i].title_id, app->title_id) == 0)
+            else if (strcmp(kept->apps[i].title_id, app->title_id) == 0 &&
+                     /* the first app of the title ID, which it names, or another that names the same one */
+                     !(app->shares[0] && !kept->apps[i].shares[0] && strcmp(kept->apps[i].id, app->shares) == 0) &&
+                     !(app->shares[0] && strcmp(kept->apps[i].shares, app->shares) == 0))
                 why = "its title ID belongs to an app listed already";
         }
+    if (why == NULL && app->shares[0])
+    {
+        int named = 0;
+        for (int i = 0; i < kept->app_count && !named; ++i)
+            named = strcmp(kept->apps[i].id, app->shares) == 0 && strcmp(kept->apps[i].title_id, app->title_id) == 0 &&
+                    !kept->apps[i].shares[0];
+        if (!named)
+            why = "shares names no app of its title ID listed before it";
+    }
     if (why != NULL)
     {
         say(log, user, "catalog: app %d (%s) left out: %s", index, label, why);
@@ -496,6 +536,39 @@ int catalog_parse(const char *json, size_t length, Catalog *out, catalog_log_fn 
     return out->app_count;
 }
 
+int catalog_no_license(const CatalogApp *app)
+{
+    const char *want = CATALOG_NO_LICENSE;
+    const char *c = app ? app->license : "";
+    while (*c == ' ')
+        ++c;
+    for (; *want; ++want, ++c)
+        if ((*c >= 'A' && *c <= 'Z' ? *c - 'A' + 'a' : *c) != *want)
+            return 0;
+    while (*c == ' ')
+        ++c;
+    return *c == '\0';
+}
+
+int catalog_sharing(const Catalog *catalog, int index, int *others, int most)
+{
+    int count = 0;
+    if (!catalog || index < 0 || index >= catalog->app_count)
+        return 0;
+    const CatalogApp *app = &catalog->apps[index];
+    for (int i = 0; i < catalog->app_count && count < most; ++i)
+    {
+        const CatalogApp *other = &catalog->apps[i];
+        if (i == index || other->source != app->source || strcmp(other->title_id, app->title_id) != 0)
+            continue;
+        /* one names the other, or both name the same first one */
+        if (strcmp(other->shares, app->id) == 0 || strcmp(app->shares, other->id) == 0 ||
+            (app->shares[0] && strcmp(app->shares, other->shares) == 0))
+            others[count++] = i;
+    }
+    return count;
+}
+
 int catalog_has_tag(const CatalogApp *app, const char *tag)
 {
     for (int i = 0; i < app->tag_count; ++i)
@@ -557,6 +630,7 @@ int catalog_merge(Catalog *into, const Catalog *custom, int source, int *hidden)
         copy->pin_count = 0;
         copy->published[0] = '\0';
         copy->notes[0] = '\0';
+        copy->shares[0] = '\0';
         ++added;
     }
     if (hidden)

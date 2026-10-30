@@ -41,8 +41,10 @@ It is Nightshade's Settings > Apps, for every app of the catalog:
 1. Solanum reads `catalog.json` from Solanum-Catalog (and keeps a copy, so it opens offline too), with each app's
    newest release as the catalog's workflow pinned it: its tag, file, size, SHA-256 and content version. It shows
    them all without asking GitHub's API, and asks it (one request an app, of the 60 an hour GitHub allows an address)
-   only for the apps installed on the console, for a release newer than the pin. Drafts and pre-releases never
-   count.
+   only for the apps installed on the console, for a release newer than the pin. Drafts never count, and neither do
+   pre-releases, except for an app whose catalog entry has the `newest` channel (one that publishes only
+   pre-releases, or other platforms' releases between its own): its release is the newest one in GitHub's list that
+   has its file, and its page says when that is a pre-release.
 2. A release's file is checked against its pin, and against the line the release's checksum file has for it and
    GitHub's own digest of the file when there are; all must agree. A release newer than the pin installs only with a
    checksum file or a digest; a file that changed after it was pinned never installs. The download's address is made
@@ -63,6 +65,12 @@ It is Nightshade's Settings > Apps, for every app of the catalog:
    in `/data`).
 6. Open sends `app-launch.elf` to the payload loader; Solanum closes, and the payload opens the app.
 
+Two apps of the catalog can have one title ID: a fork that kept its original's (Physalis and ProsperoTV, for one). A
+console holds one of them. Solanum tells which is installed by the name in its `param.json` (the name the catalog's
+workflow read in each app's release), shows the other as not installed, with a note on its page, and installs it
+only after asking: in place of the one there, in its folder, where it keeps the saved data. The kept versions and the
+holds and skips of the one it replaces are let go, so Roll back never puts the other app back.
+
 Each download is kept in `/data/solanum/cache/` while it arrives, so a cut-off one goes on with an HTTP range
 next time; a copy that doesn't match its checksum is deleted, never resumed. Your decisions (holds, skipped
 releases, how each app came to be installed) are in `/data/solanum/apps.ini`, custom catalogs in
@@ -73,9 +81,12 @@ releases, how each app came to be installed) are in `/data/solanum/apps.ini`, cu
 
 Open a pull request on [Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog): one entry in
 `catalog.json`'s `apps`, as its README says (so does the website's
-[Submit your app](https://oliv3rmoon.github.io/Solanum-Catalog/submit/) page). Open-source homebrew only, with an
-OSI license and a GitHub release whose ZIP holds the app's folder; a checksum file is welcome but no longer needed,
-since the catalog's workflow pins every release. Solanum shows it once the pull request is in.
+[Submit your app](https://oliv3rmoon.github.io/Solanum-Catalog/submit/) page). It needs a public repository and a
+GitHub release whose ZIP holds the app's folder; a checksum file is welcome but not needed, since the catalog's
+workflow pins every release. Its license is shown as it is, or as **No license** when the repository states none.
+No game data, ROMs, BIOS or keys in a release, and nothing whose main purpose is installing or loading game dumps or
+backups; a port that runs a game you own is welcome, marked **Needs your own game files**. Solanum shows it once the
+pull request is in.
 
 ## Custom catalogs
 

@@ -6,8 +6,12 @@
  * catalog.json is read with the self-update kit's bounded JSON readers (kit/update_check.h). An app the
  * catalog lists badly (a field missing, the wrong type or too long, a title ID that isn't four letters and
  * five digits, a repository that isn't owner/name, an unknown category, a file or folder name that can't be
- * one, an id or title ID listed twice) is left out with a line in the log, and the rest are kept: one bad
- * pull request never takes the store down. A text that isn't a catalog this version reads (not one JSON
+ * one, an id listed twice, a title ID listed twice without `shares`) is left out with a line in the log, and
+ * the rest are kept: one bad pull request never takes the store down.
+ *
+ * 0.4.0 reads what the catalog's new line adds: "none stated" as a license (No license), needs_game_files, the
+ * "newest" channel (the newest release with the app's file, pre-releases included), `shares` (a later app with
+ * the title ID of one listed before it), and each pin's title_name and prerelease. A text that isn't a catalog this version reads (not one JSON
  * object, a schema other than 1, no apps array) is refused whole.
  *
  * Plain C11 with no console calls, so the host test builds it alone (tests/store_check.c).
@@ -52,7 +56,12 @@ typedef struct
     uint64_t size;
     char sha256[65];   /* lowercase */
     char content[12];  /* the contentVersion of the app in it, as the workflow read it; empty: not known */
+    char title_name[64]; /* 0.4.0: the name in its param.json, as the workflow read it; empty: not known */
+    bool prerelease;   /* 0.4.0: GitHub calls the release a pre-release */
 } CatalogPin;
+
+/* The license an app's repository states when it states none: Solanum shows "No license". */
+#define CATALOG_NO_LICENSE "none stated"
 
 typedef struct
 {
@@ -79,6 +88,10 @@ typedef struct
     char published[24]; /* the newest pinned release's date ("2026-10-29T19:18:39Z") */
     char notes[CATALOG_NOTES]; /* its notes */
     int source;         /* 0: Solanum's catalog; 1 and up: a custom catalog's (custom_catalog_*), third-party */
+    /* 0.4.0 */
+    bool needs_game_files; /* a port or launcher that runs the files of a game the player owns; it ships none */
+    bool newest;        /* channel "newest": its release is the newest one with its file, pre-releases included */
+    char shares[32];    /* the id of the app listed before it whose title ID it has too; empty: none */
 } CatalogApp;
 
 typedef struct
@@ -111,6 +124,13 @@ int catalog_merge(Catalog *into, const Catalog *custom, int source, int *hidden)
  * digits, '.', '_' and '-', and none that the console, the HEN, ShadowMountPlus or Solanum keeps (homebrew, etaHEN,
  * solanum...). The install helper checks the same (helper/self_update_helper, data_folder_allowed). */
 int catalog_data_folder_valid(const char *path);
+
+/* 0.4.0: whether an app's repository states no license ("none stated"): Solanum says "No license". */
+int catalog_no_license(const CatalogApp *app);
+
+/* 0.4.0: the other apps of an app's title ID (one `shares` it with the other): their indexes in *others, at most
+ * `most`; returns how many. A console holds one app of a title ID, so installing one replaces the other. */
+int catalog_sharing(const Catalog *catalog, int index, int *others, int most);
 
 /* Whether an app has `tag` (lowercase, exact). */
 int catalog_has_tag(const CatalogApp *app, const char *tag);

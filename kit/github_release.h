@@ -219,6 +219,9 @@ extern "C"
         /* Solanum: the content version the catalog's workflow read in the pinned file's param.json; empty when it
            isn't known (then the tag is all there is to go by). */
         char content[12];
+        /* Solanum 0.4.0: GitHub calls the release a pre-release (only for an app whose catalog entry's channel is
+           "newest"; releases/latest never gives one). */
+        int prerelease;
     } github_release_asset;
 
     /* Solanum: a release file's name from the catalog's pattern, where "{version}" stands for the
@@ -245,6 +248,11 @@ extern "C"
     github_release_reason github_release_asset_read(const char *json, size_t length, const char *pattern,
                                                     const char *sums, github_release_asset *asset,
                                                     github_release_files *files);
+    /* Solanum 0.4.0: the same, a pre-release read too when `prereleases` (its asset's prerelease is then 1); a draft
+     * never. */
+    github_release_reason github_release_asset_read_any(const char *json, size_t length, const char *pattern,
+                                                        const char *sums, github_release_asset *asset,
+                                                        github_release_files *files, int prereleases);
 
     /* releases/latest of `repository` (a renamed one's redirect followed, as for the app's own
      * update, but only to a repository of the same owner: the answer names where it is now, and
@@ -273,6 +281,11 @@ extern "C"
     int github_release_list_read(const char *json, size_t length, const char *repository, const char *pattern,
                                  const char *sums, github_release_asset *out, github_release_files *files,
                                  int most);
+    /* Solanum 0.4.0: the same, pre-releases kept too when `prereleases` (an app whose channel is "newest": its
+     * release is the first one this keeps). */
+    int github_release_list_read_any(const char *json, size_t length, const char *repository, const char *pattern,
+                                     const char *sums, github_release_asset *out, github_release_files *files,
+                                     int most, int prereleases);
     /* https://api.github.com/repos/<repository>/releases?per_page=<count>. Its length, or 0. */
     size_t github_release_list_url(char *out, size_t size, const char *repository, int count);
 

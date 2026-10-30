@@ -80,6 +80,63 @@ bool apps_read_param(const char *path, char title[10], char version[12])
     return true;
 }
 
+bool apps_param_name(const char *json, size_t length, char *name, size_t size)
+{
+    const char *localized = NULL, *entry = NULL;
+    size_t localized_length = 0, entry_length = 0, cursor = 0;
+    char language[24];
+    if (!json || !name || size == 0)
+        return false;
+    name[0] = '\0';
+    if (update_check_json_value(json, length, "localizedParameters", &localized, &localized_length) != 1 ||
+        localized_length == 0 || localized[0] != '{')
+        return false;
+    /* its default language's first */
+    if (update_check_json_string(localized, localized_length, "defaultLanguage", language, sizeof(language)) == 1 &&
+        update_check_json_value(localized, localized_length, language, &entry, &entry_length) == 1 &&
+        entry_length > 0 && entry[0] == '{' &&
+        update_check_json_string(entry, entry_length, "titleName", name, size) == 1 && name[0])
+        return true;
+    /* else the first language that has one: the object's members, read as "key": value pairs */
+    while (cursor < localized_length)
+    {
+        const char *key = memchr(localized + cursor, '"', localized_length - cursor);
+        if (!key)
+            break;
+        const char *end = memchr(key + 1, '"', localized_length - (size_t)(key + 1 - localized));
+        if (!end || (size_t)(end - key - 1) >= sizeof(language))
+            break;
+        memcpy(language, key + 1, (size_t)(end - key - 1));
+        language[end - key - 1] = '\0';
+        cursor = (size_t)(end + 1 - localized);
+        if (update_check_json_value(localized, localized_length, language, &entry, &entry_length) == 1 &&
+            entry_length > 0 && entry[0] == '{')
+        {
+            if (update_check_json_string(entry, entry_length, "titleName", name, size) == 1 && name[0])
+                return true;
+            cursor = (size_t)(entry + entry_length - localized); /* past the language's object */
+        }
+    }
+    name[0] = '\0';
+    return false;
+}
+
+/* The name in the param.json at `path` ("" when none). */
+static void read_name(const char *path, char *name, size_t size)
+{
+    char *body;
+    size_t length;
+    name[0] = '\0';
+    if (!read_small(path, 64 * 1024, &body, &length))
+        return;
+    if (!apps_param_name(body, length, name, size))
+        name[0] = '\0';
+    for (char *c = name; *c; ++c)
+        if ((unsigned char)*c < 0x20 || (unsigned char)*c == 0x7f)
+            *c = ' ';
+    free(body);
+}
+
 /* The folder ShadowMountPlus recorded it mounted a title from: <registered>/app/<title>/mount.lnk holds its
  * path (as the self-update helper reads it). False: none. */
 static bool mounted_from(const char *registered, const char *title, char *out, size_t size)
@@ -116,6 +173,7 @@ static bool holds(const char *folder, const char *title, Installed *out)
     memset(out, 0, sizeof(*out));
     str_copy(out->folder, sizeof(out->folder), folder);
     memcpy(out->version, version, sizeof(version));
+    read_name(path, out->name, sizeof(out->name));
     return true;
 }
 
@@ -166,6 +224,8 @@ Installed apps_find(const char *title, const char *registered, const char *own_f
             snprintf(path, sizeof(path), "%s/sce_sys/param.json", found.folder);
             if (!apps_read_param(path, id, found.version) || strcmp(id, title) != 0)
                 found.version[0] = '\0';
+            else
+                read_name(path, found.name, sizeof(found.name));
             return found;
         }
     }
@@ -230,6 +290,8 @@ Installed apps_find_in(const char *title, const char *registered, const char *co
             snprintf(path, sizeof(path), "%s/sce_sys/param.json", found.folder);
             if (!apps_read_param(path, id, found.version) || strcmp(id, title) != 0)
                 found.version[0] = '\0';
+            else
+                read_name(path, found.name, sizeof(found.name));
             return found;
         }
     }
@@ -341,6 +403,60 @@ bool apps_folder_size(const char *folder, uint64_t *bytes)
     int budget = 200000;
     *bytes = 0;
     return folder && folder[0] && add_sizes(folder, 0, bytes, &budget);
+}
+
+/* The same name, ignoring case and the spaces around it. */
+static bool same_name(const char *a, const char *b)
+{
+    size_t la, lb;
+    while (*a == ' ')
+        ++a;
+    while (*b == ' ')
+        ++b;
+    la = strlen(a);
+    lb = strlen(b);
+    while (la > 0 && a[la - 1] == ' ')
+        --la;
+    while (lb > 0 && b[lb - 1] == ' ')
+        --lb;
+    if (la == 0 || la != lb)
+        return false;
+    for (size_t i = 0; i < la; ++i)
+        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i]))
+            return false;
+    return true;
+}
+
+int apps_owner(const Catalog *catalog, int index, const Installed *installed)
+{
+    int group[8], count, first;
+    if (!catalog || index < 0 || index >= catalog->app_count || !installed || !installed->folder[0])
+        return index;
+    count = catalog_sharing(catalog, index, group, 7);
+    if (count == 0)
+        return index;
+    group[count++] = index;
+    first = group[0];
+    for (int i = 1; i < count; ++i)
+        if (group[i] < first)
+            first = group[i];
+    if (!installed->name[0])
+        return first;
+    /* the name its pinned releases give it, then its own name */
+    for (int pass = 0; pass < 2; ++pass)
+        for (int g = 0; g < count; ++g)
+        {
+            const CatalogApp *app = &catalog->apps[group[g]];
+            if (pass == 0)
+            {
+                for (int p = 0; p < app->pin_count; ++p)
+                    if (app->pins[p].title_name[0] && same_name(app->pins[p].title_name, installed->name))
+                        return group[g];
+            }
+            else if (same_name(app->name, installed->name))
+                return group[g];
+        }
+    return first;
 }
 
 /* ---------------------------------------------------------------- what a release offers */
@@ -484,6 +600,7 @@ bool apps_release_from_pin(const CatalogApp *app, int pin, github_release_asset 
     str_copy(out->content, sizeof(out->content), p->content);
     out->size = p->size;
     out->pinned = 1;
+    out->prerelease = p->prerelease ? 1 : 0;
     if (!download_url(out->url, sizeof(out->url), app->repo, p->tag, p->asset))
     {
         memset(out, 0, sizeof(*out));

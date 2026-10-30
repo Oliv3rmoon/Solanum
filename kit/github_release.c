@@ -1114,6 +1114,13 @@ github_release_reason github_release_asset_read(const char *json, size_t length,
                                                 const char *sums, github_release_asset *asset,
                                                 github_release_files *files)
 {
+    return github_release_asset_read_any(json, length, pattern, sums, asset, files, 0);
+}
+
+github_release_reason github_release_asset_read_any(const char *json, size_t length, const char *pattern,
+                                                    const char *sums, github_release_asset *asset,
+                                                    github_release_files *files, int prereleases)
+{
     const char *assets = NULL;
     size_t assets_length = 0;
     size_t cursor = 0;
@@ -1132,7 +1139,15 @@ github_release_reason github_release_asset_read(const char *json, size_t length,
     if (update_check_json_value(json, length, "assets", &assets, &assets_length) != 1)
         return GITHUB_RELEASE_BAD_RESPONSE;
     if ((reason = published(json, length, "draft")) == GITHUB_RELEASE_NEWER)
+    {
         reason = published(json, length, "prerelease");
+        /* 0.4.0: a pre-release is read when the caller asks for them (it says so in the asset) */
+        if (reason == GITHUB_RELEASE_NOT_PUBLISHED && prereleases)
+        {
+            asset->prerelease = 1;
+            reason = GITHUB_RELEASE_NEWER;
+        }
+    }
     if (reason != GITHUB_RELEASE_NEWER)
         return reason;
     if ((found = string_member(json, length, "tag_name", asset->tag, sizeof(asset->tag))) != 1)
@@ -1308,6 +1323,13 @@ size_t github_release_list_url(char *out, size_t size, const char *repository, i
 int github_release_list_read(const char *json, size_t length, const char *repository, const char *pattern,
                              const char *sums, github_release_asset *out, github_release_files *files, int most)
 {
+    return github_release_list_read_any(json, length, repository, pattern, sums, out, files, most, 0);
+}
+
+int github_release_list_read_any(const char *json, size_t length, const char *repository, const char *pattern,
+                                 const char *sums, github_release_asset *out, github_release_files *files, int most,
+                                 int prereleases)
+{
     size_t cursor = 0;
     int kept = 0;
     if (json == NULL || out == NULL || files == NULL || most <= 0 || !github_release_repository_valid(repository))
@@ -1332,7 +1354,7 @@ int github_release_list_read(const char *json, size_t length, const char *reposi
             return kept > 0 ? kept : -1;
         if (item_length == 0 || item[0] != '{')
             continue;
-        if (github_release_asset_read(item, item_length, pattern, sums, &out[kept], &files[kept]) !=
+        if (github_release_asset_read_any(item, item_length, pattern, sums, &out[kept], &files[kept], prereleases) !=
             GITHUB_RELEASE_NEWER)
             continue;
         found = snprintf(out[kept].url, sizeof(out[kept].url), "https://github.com/%s/releases/download/%s/%s",

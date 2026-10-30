@@ -234,6 +234,13 @@ static void draw_app_row(int index, float x, float y, float w, float h, bool foc
     }
     else if (a->source > 0 && bx + 160 < tx + room)
         text_draw(bx, y + 20, 20, FONT_REGULAR, TH_GOLD, ALIGN_LEFT, tr("third-party"));
+    /* 0.4.0: a port says it needs the player's own game files; an app whose repository states no license says so */
+    else if (a->needs_game_files || catalog_no_license(a))
+    {
+        const char *note = a->needs_game_files ? tr("needs your own game files") : tr("no license");
+        if (bx + text_width(20, FONT_REGULAR, note) < tx + room)
+            text_draw(bx, y + 20, 20, FONT_REGULAR, TH_GOLD, ALIGN_LEFT, note);
+    }
     text_draw_fit(tx, y + 56, 23, FONT_REGULAR, TH_TEXT_DIM, ALIGN_LEFT, room, a->summary);
     if (a->stars)
     {
@@ -501,7 +508,7 @@ static void browse(uint32_t pressed)
     }
     static const int glyphs[] = {GLYPH_CROSS, GLYPH_TRIANGLE, GLYPH_SQUARE, GLYPH_START};
     static const char *const labels[] = {"Open", "Search", "Refresh", "Settings"};
-    app_draw_hints(glyphs, labels, 4, "Open-source homebrew only");
+    app_draw_hints(glyphs, labels, 4, "Every release pinned by its SHA-256");
 }
 
 /* ---------------------------------------------------------------- Updates and Installed */
@@ -887,11 +894,11 @@ static void about(uint32_t pressed)
              tr("a Nightshade app by Oliv3rmoon. Free software: GPL-3.0-or-later."));
     text_draw_fit(x + 28, y + 19, 28, FONT_BOLD, TH_TEXT, ALIGN_LEFT, w - 56, version);
     const char *lines[] = {
-        "Solanum installs, updates, rolls back and uninstalls open-source PS5 homebrew from an open catalog, "
+        "Solanum installs, updates, rolls back and uninstalls PS5 homebrew from an open catalog, "
         "github.com/Oliv3rmoon/Solanum-Catalog. Anyone can add an app there with a pull request.",
         catalog->about,
-        "Open-source homebrew only: every app links its source and its license. Solanum never offers game files, "
-        "and nothing it lists downloads them.",
+        "Every app links its source and shows its license, or No license when its repository states none. Solanum "
+        "never offers game files: a port that runs a game you own ships none, and says it needs yours.",
         "Every app comes from its own GitHub release and is checked before anything is unpacked: against the "
         "SHA-256 the catalog's workflow pinned when it downloaded the release, and the release's checksum file or "
         "GitHub's digest. Custom catalogs are third-party, and checked against GitHub alone.",

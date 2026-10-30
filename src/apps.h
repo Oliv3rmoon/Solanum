@@ -29,10 +29,21 @@ typedef struct
     char folder[256]; /* empty: not found */
     char version[12]; /* its sce_sys/param.json's contentVersion */
     bool image;       /* ShadowMountPlus mounts it from an image: it opens, it isn't updated here */
+    char name[64];    /* 0.4.0: its param.json's name (its default language's titleName); empty: none */
 } Installed;
 
 /* titleId and contentVersion of a param.json; false when it can't be read or lacks either. */
 bool apps_read_param(const char *path, char title[10], char version[12]);
+/* 0.4.0: the name a param.json gives the app (localizedParameters: its default language's titleName, else the first
+ * one it has), in `name`; false when it has none. */
+bool apps_param_name(const char *json, size_t length, char *name, size_t size);
+
+/* 0.4.0: which app an installed folder of a shared title ID is. Two apps can have one title ID (catalog_sharing: a
+ * fork that kept its original's); a console holds one of them. The installed one is the app whose pinned release
+ * names it as its param.json does (pin title_name), else whose name is that name (ignoring case), else the one
+ * listed first. Returns the catalog's index of that app; `index` itself when its title ID is its own, or when the
+ * folder can't be told (nothing installed). */
+int apps_owner(const Catalog *catalog, int index, const Installed *installed);
 /* Solanum's own folder as it lies on its drive (not the PS5's mount of it, /app0): where ShadowMountPlus
  * recorded it mounted it from (<registered>/app/<title>/mount.lnk), else install_dir when the app is there.
  * Empty when neither. */

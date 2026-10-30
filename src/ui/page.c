@@ -2,6 +2,8 @@
  * Solanum - an app's page: its name, summary, author, stars, tags and license, an "attested" badge when the catalog
  * says its release's CI attests its builds, which catalog lists it, its newest release (version, date, size, what it
  * is checked against, changelog), where it is installed, a QR code to its source, and Install / Update / Open / More.
+ * 0.4.0: notes on what to know first: "No license" (its repository states none), "Needs your own game files" (a port
+ * that ships none), "Pre-release", and the other app of its title ID, which an install replaces after asking.
  * More holds the rest: where a new app goes, Versions (any release, older ones too), Roll back, skipping a release,
  * holding its updates, and Uninstall. An install shows here as it goes, with one of the catalog's tips.
  * SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
@@ -42,7 +44,8 @@ enum
     ASK_THIRD_PARTY,
     ASK_UNINSTALL,
     ASK_VERSION,
-    ASK_ROLLBACK
+    ASK_ROLLBACK,
+    ASK_REPLACE
 };
 
 /* More's items */
@@ -64,6 +67,7 @@ static int more_actions[8], more_count;
 static int places[APPS_PLACES], place_count;
 static int chosen_version = -1;
 static bool installing_after_agree;
+static bool replace_agreed; /* 0.4.0: replacing the other app of its title ID was agreed to, this time */
 static char where_after_agree[64];
 static int shown_versions = -1; /* the Versions answer the menu shows */
 
@@ -80,6 +84,7 @@ void page_open(int index)
     progress_shown = 0;
     generation = store_generation();
     installing_after_agree = false;
+    replace_agreed = false;
     overlay_reset(); /* nothing asked on another app's page is answered on this one */
     char url[200];
     uint8_t temp[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
@@ -180,6 +185,25 @@ static void begin_install(int index)
     }
     if (!fresh)
     {
+        install_now(index, "");
+        return;
+    }
+    /* 0.4.0: another app of its title ID is installed: this one goes in its place, once the player says so */
+    if (s->occupant >= 0 && s->occupied.folder[0] && s->occupant < store_catalog()->app_count)
+    {
+        if (!replace_agreed)
+        {
+            const CatalogApp *other = &store_catalog()->apps[s->occupant];
+            char body[700], title[160];
+            snprintf(body, sizeof(body),
+                     tr("%s and %s have the same title ID, %s, and a console holds one of them. Installing %s puts it "
+                        "in place of %s, in %s. Its saved data stays, and it comes back the same way."),
+                     a->name, other->name, a->title_id, a->name, other->name, s->occupied.folder);
+            snprintf(title, sizeof(title), tr("Replace %s?"), other->name);
+            confirm_open(ASK_REPLACE, title, body, tr("Install"), NULL, false);
+            return;
+        }
+        replace_agreed = false;
         install_now(index, "");
         return;
     }
@@ -402,6 +426,11 @@ static void answers(int index)
         app_request(REQUEST_ROLLBACK, index);
     if (confirm_answered(ASK_UNINSTALL, &yes, &checked) && yes)
         app_request_with(REQUEST_UNINSTALL, index, checked ? 1 : 0, "");
+    if (confirm_answered(ASK_REPLACE, &yes, &checked) && yes)
+    {
+        replace_agreed = true;
+        begin_install(index);
+    }
     if (confirm_answered(ASK_THIRD_PARTY, &yes, &checked))
     {
         if (yes && installing_after_agree)
@@ -577,8 +606,8 @@ void page_screen(uint32_t pressed)
     const float nx = x + 168 + 40, name_room = qr_x - nx - 40;
     text_draw_fit(nx, top + 6, 56, FONT_BOLD, TH_TEXT, ALIGN_LEFT, name_room, a->name);
     char line[400];
-    snprintf(line, sizeof(line), "%s  ·  %s  ·  github.com/%s", tr(catalog_category_title(a->category)), a->license,
-             a->repo);
+    snprintf(line, sizeof(line), "%s  ·  %s  ·  github.com/%s", tr(catalog_category_title(a->category)),
+             catalog_no_license(a) ? tr("No license") : a->license, a->repo);
     text_draw_fit(nx, top + 84, 24, FONT_REGULAR, TH_TEXT_DIM, ALIGN_LEFT, name_room, line);
     draw_qr_small(qr_x, top + 4, qr_side);
     text_draw(qr_x + qr_side * 0.5f, top + qr_side + 14, 18, FONT_REGULAR, TH_TEXT_DIM, ALIGN_CENTER, tr("its source"));
@@ -607,7 +636,48 @@ void page_screen(uint32_t pressed)
                         s->by == BY_HAND ? tr("Installed by hand, looked after by Solanum") : tr("Installed")) +
               14;
     if (s->hold)
-        draw_pill(bx, top + 126, 42, 22, TH_PILL, TH_GOLD, tr("Updates held"));
+        bx += draw_pill(bx, top + 126, 42, 22, TH_PILL, TH_GOLD, tr("Updates held")) + 14;
+    /* 0.4.0: what to know before installing it, as far as there is room before the QR code */
+    {
+        const float room = qr_x - 40;
+        char note[200];
+        int others[4];
+        const int sharing = catalog_sharing(catalog, index, others, 4);
+        const char *notes[4];
+        uint32_t colors[4];
+        int count = 0;
+        if (a->needs_game_files)
+        {
+            notes[count] = tr("Needs your own game files");
+            colors[count++] = TH_GOLD;
+        }
+        if (catalog_no_license(a))
+        {
+            notes[count] = tr("No license");
+            colors[count++] = TH_GOLD;
+        }
+        if (s->checked && s->reason == GITHUB_RELEASE_NEWER && s->release.prerelease)
+        {
+            notes[count] = tr("Pre-release");
+            colors[count++] = TH_TEXT_SOFT;
+        }
+        if (sharing > 0)
+        {
+            if (s->occupant >= 0 && s->occupant < catalog->app_count)
+                snprintf(note, sizeof(note), tr("Installing it replaces %s"), catalog->apps[s->occupant].name);
+            else
+                snprintf(note, sizeof(note), tr("Shares its title ID with %s"), catalog->apps[others[0]].name);
+            notes[count] = note;
+            colors[count++] = s->occupant >= 0 ? TH_GOLD : TH_TEXT_SOFT;
+        }
+        for (int n = 0; n < count; ++n)
+        {
+            if (bx + text_width(22, FONT_REGULAR, notes[n]) + 42 > room)
+                break;
+            bx += draw_pill(bx, top + 126, 42, 22, colors[n] == TH_GOLD ? 0x33d4a72cu : TH_PILL, colors[n], notes[n]) +
+                  14;
+        }
+    }
     app_draw_wrapped(a->summary, x, top + 210, qr_x - x - 40, 30, FONT_REGULAR, TH_TEXT_SOFT, ALIGN_LEFT, top + 300, 0,
                      NULL);
 
@@ -648,6 +718,9 @@ void page_screen(uint32_t pressed)
         else
             snprintf(value, sizeof(value), "%s%s", s->installed.folder, s->installed.image ? tr("  (an image)") : "");
     }
+    else if (s->looked && s->occupant >= 0 && s->occupant < catalog->app_count && s->occupied.folder[0])
+        snprintf(value, sizeof(value), tr("%s is there now, in %s"), catalog->apps[s->occupant].name,
+                 s->occupied.folder);
     else
         snprintf(value, sizeof(value), "%s", tr("Not installed yet: Install says where it goes"));
     info_row(cx + 16, ry, cw - 32, tr("Lives in"), value, TH_TEXT_SOFT, FONT_REGULAR);

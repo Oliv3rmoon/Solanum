@@ -10,7 +10,11 @@
  * downloaded and hashed it), so a catalog of any size costs GitHub's API nothing; GitHub is asked (one request an app
  * of the 60 an hour it allows an address) only for the apps installed here, to see a release newer than the pin, for
  * the apps the catalog pinned nothing for, and for a custom catalog's apps, and never again once it says the hour's
- * requests are used. Drafts and pre-releases are never offered.
+ * requests are used. Drafts are never offered, nor pre-releases, except for an app whose catalog channel is
+ * "newest" (0.4.0): its release is the newest one with its file, pre-release or not, asked of GitHub's list.
+ *
+ * 0.4.0: two apps may share a title ID (a fork that kept its original's). The console holds one of them; the one
+ * installed is told by its param.json's name (apps_owner), and installing the other replaces it in its folder.
  *
  * Installs are the self-update kit's jobs with an install offer (kit/self_update.h): the ZIP checked against its
  * SHA-256 as it arrives (resume.h keeps a copy, so an interrupted one goes on where it stopped) and again by the
@@ -99,6 +103,10 @@ typedef struct
     /* the version before the installed one, kept for Roll back (keep.h) */
     bool kept;
     KeptZip previous;
+    /* 0.4.0: its title ID is shared (catalog_sharing) and another app of it is installed: that app's catalog index,
+     * and its folder, which an install of this one replaces (-1: none) */
+    int occupant;
+    Installed occupied;
 } StoreApp;
 
 const StoreApp *store_app(int index); /* the catalog's index */

@@ -13,7 +13,9 @@
  *     unpack anything, and its resumable copy is deleted; an interrupted download resumes from its copy;
  *   - where an app is, what a release offers, the offer the helper installs from, the launch payload's
  *     conversation;
- *   - the Konami code, and a random tip or egg.
+ *   - the Konami code, and a random tip or egg;
+ *   - 0.4.0's catalog line: No license, needs_game_files, the "newest" channel (pre-releases read from GitHub's list),
+ *     and two apps of one title ID (`shares`), told apart by the installed param.json's name.
  */
 #define _DEFAULT_SOURCE 1 /* glibc: lstat, strdup, usleep under -std=c11 */
 #include "../src/apps.h"
@@ -790,9 +792,9 @@ static void check_apps(void)
 
     Installed none;
     memset(&none, 0, sizeof(none));
-    Installed old = {"/data/homebrew/PPSA99003", "01.002.000", false};
-    Installed same = {"/data/homebrew/PPSA99003", "01.002.001", false};
-    Installed image = {"/user/app/PPSA99003", "01.002.000", true};
+    Installed old = {"/data/homebrew/PPSA99003", "01.002.000", false, ""};
+    Installed same = {"/data/homebrew/PPSA99003", "01.002.001", false, ""};
+    Installed image = {"/user/app/PPSA99003", "01.002.000", true, ""};
     EXPECT(apps_decide(&none, true, "01.002.001") == OFFER_GET, "not installed: get it");
     EXPECT(apps_decide(&none, false, "") == OFFER_NONE, "not installed, no release: nothing");
     EXPECT(apps_decide(&old, true, "01.002.001") == OFFER_UPDATE, "an older one: update it");
@@ -1095,6 +1097,18 @@ static void check_pinned_catalog(void)
     }
     EXPECT(pinned == catalog.app_count, "every app's release is pinned, with an address on github.com");
     EXPECT(tagged == catalog.app_count, "every app has tags to search by");
+    /* 0.4.0: ProsperoStore's apps joined: ports, no-license apps, pre-release channels and shared title IDs */
+    int ports = 0, unlicensed = 0, newest = 0, sharing = 0, named = 0;
+    for (int i = 0; i < catalog.app_count; ++i)
+    {
+        ports += catalog.apps[i].needs_game_files;
+        unlicensed += catalog_no_license(&catalog.apps[i]);
+        newest += catalog.apps[i].newest;
+        sharing += catalog.apps[i].shares[0] != '\0';
+        named += catalog.apps[i].pins[0].title_name[0] != '\0';
+    }
+    EXPECT(catalog.app_count >= 150 && ports >= 40 && unlicensed >= 2 && newest >= 20 && sharing == 4 && named >= 100,
+           "the 0.4.0 catalog: 150 apps or more, its ports, no-license apps, newest channels and four shared title IDs");
     free(json);
 }
 
@@ -1370,6 +1384,130 @@ static void check_roots(void)
            "an app installed by hand on a USB drive is found, whatever its folder's name");
 }
 
+
+/* ---------------------------------------------------------------- 0.4.0: the catalog's new line */
+
+#define HEX64 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+#define APP(id, title, more)                                                                                     \
+    "{\"id\":\"" id "\",\"name\":\"" id "\",\"category\":\"game\",\"summary\":\"s\",\"title_id\":\"" title         \
+    "\",\"repo\":\"someone/" id "\",\"asset\":\"" id "-{version}.zip\",\"folder\":\"" title                          \
+    "\",\"checksums\":\"SHA256SUMS\",\"attested\":false,\"license\":\"MIT\"" more "}"
+
+static void check_new_line(void)
+{
+    static Catalog shared;
+    static const char json[] =
+        "{\"schema\":1,\"apps\":["
+        APP("physalis", "PPSA99003", ",\"release\":{\"tag\":\"01.002.002\",\"asset\":\"physalis-01.002.002.zip\","
+                                     "\"size\":10,\"sha256\":\"" HEX64 "\",\"title_name\":\"Physalis\"}") ","
+        APP("prosperotv", "PPSA99003", ",\"shares\":\"physalis\",\"release\":{\"tag\":\"01.000.090\","
+                                       "\"asset\":\"prosperotv-01.000.090.zip\",\"size\":10,\"sha256\":\"" HEX64 "\","
+                                       "\"title_name\":\"ProsperoTV\"}") ","
+        APP("thief", "PPSA99003", "") ","
+        APP("second-fork", "PPSA99003", ",\"shares\":\"physalis\"") ","
+        APP("chain", "PPSA99003", ",\"shares\":\"prosperotv\"") ","
+        APP("liar", "PPSA99003", ",\"shares\":\"nobody\"") ","
+        APP("elsewhere", "PPSA11111", ",\"shares\":\"physalis\"") ","
+        "{\"id\":\"port\",\"name\":\"port\",\"category\":\"game\",\"summary\":\"s\",\"title_id\":\"PPSA22222\","
+        "\"repo\":\"someone/port\",\"asset\":\"port-{version}.zip\",\"folder\":\"PPSA22222\",\"checksums\":\"SHA256SUMS\","
+        "\"attested\":false,\"license\":\" None Stated \",\"needs_game_files\":true,\"channel\":\"newest\","
+        "\"release\":{\"tag\":\"v0.2.0-beta.1\",\"asset\":\"port-0.2.0-beta.1.zip\",\"size\":10,"
+        "\"sha256\":\"" HEX64 "\",\"prerelease\":true,\"title_name\":\"Port\"}},"
+        APP("odd", "PPSA33333", ",\"channel\":\"beta\",\"needs_game_files\":\"yes\"")
+        "]}";
+    log_count = 0;
+    EXPECT(catalog_parse(json, sizeof(json) - 1, &shared, collect, NULL) == 5, "the new line's catalog");
+    EXPECT(strcmp(shared.apps[1].id, "prosperotv") == 0 && strcmp(shared.apps[1].shares, "physalis") == 0,
+           "a later app of a title ID that says it shares it is kept");
+    EXPECT(logged("app 2 (thief) left out: its title ID belongs") && logged("app 5 (liar) left out") &&
+               logged("app 6 (elsewhere) left out: shares names no app") && logged("app 4 (chain) left out") &&
+               strcmp(shared.apps[2].id, "second-fork") == 0,
+           "a title ID listed twice without shares, shares of no app, of a fork, or across title IDs are left out; a "
+           "second fork of the same app is kept");
+    const CatalogApp *port = &shared.apps[3], *odd = &shared.apps[4];
+    EXPECT(catalog_no_license(port) && !catalog_no_license(&shared.apps[0]) && port->needs_game_files && port->newest,
+           "No license (any case), needs_game_files and the newest channel");
+    EXPECT(!odd->newest && !odd->needs_game_files && logged("channel \"beta\" is not one") &&
+               logged("needs_game_files is not true or false"),
+           "an unknown channel and a needs_game_files that isn't a boolean: logged, and left at their defaults");
+    EXPECT(port->pins[0].prerelease && strcmp(port->pins[0].title_name, "Port") == 0 &&
+               !shared.apps[0].pins[0].prerelease && strcmp(shared.apps[0].pins[0].title_name, "Physalis") == 0,
+           "a pin's name and whether it is a pre-release");
+    github_release_asset from_pin;
+    EXPECT(apps_release_from_pin(port, 0, &from_pin) && from_pin.prerelease == 1, "the pin's release says pre-release");
+    int others[4];
+    EXPECT(catalog_sharing(&shared, 0, others, 4) == 2 && others[0] == 1 && others[1] == 2 &&
+               catalog_sharing(&shared, 1, others, 4) == 2 && others[0] == 0 && others[1] == 2 &&
+               catalog_sharing(&shared, 3, others, 4) == 0,
+           "the apps of a shared title ID name each other");
+
+    /* which one is installed: the installed param.json's name */
+    char name[64];
+    static const char param_default[] = "{\"titleId\":\"PPSA99003\",\"localizedParameters\":{\"defaultLanguage\":"
+                                        "\"ja-JP\",\"en-US\":{\"titleName\":\"English\"},\"ja-JP\":{\"titleName\":"
+                                        "\"ProsperoTV\"}}}";
+    static const char param_first[] = "{\"localizedParameters\":{\"en-US\":{\"titleName\":\"Physalis\"}}}";
+    static const char param_none[] = "{\"titleId\":\"PPSA99003\",\"contentVersion\":\"01.000.000\"}";
+    EXPECT(apps_param_name(param_default, sizeof(param_default) - 1, name, sizeof(name)) &&
+               strcmp(name, "ProsperoTV") == 0,
+           "a param.json's name: its default language's");
+    EXPECT(apps_param_name(param_first, sizeof(param_first) - 1, name, sizeof(name)) && strcmp(name, "Physalis") == 0,
+           "a param.json's name: the first language's when it names no default");
+    EXPECT(!apps_param_name(param_none, sizeof(param_none) - 1, name, sizeof(name)) && name[0] == '\0',
+           "a param.json without a name");
+    Installed tv = {.folder = "/data/homebrew/PPSA99003", .version = "01.000.090", .name = "prosperotv"};
+    Installed fork = {.folder = "/data/homebrew/PPSA99003", .version = "01.002.002", .name = "Physalis"};
+    Installed unknown = {.folder = "/data/homebrew/PPSA99003", .version = "01.000.001", .name = "Something"};
+    Installed nameless = {.folder = "/data/homebrew/PPSA99003", .version = "01.000.001"};
+    Installed nothing = {.folder = ""};
+    EXPECT(apps_owner(&shared, 0, &tv) == 1 && apps_owner(&shared, 1, &tv) == 1, "ProsperoTV is ProsperoTV's");
+    EXPECT(apps_owner(&shared, 0, &fork) == 0 && apps_owner(&shared, 1, &fork) == 0, "Physalis is Physalis's");
+    EXPECT(apps_owner(&shared, 1, &unknown) == 0 && apps_owner(&shared, 1, &nameless) == 0,
+           "a folder neither names is the app listed first's");
+    EXPECT(apps_owner(&shared, 1, &nothing) == 1 && apps_owner(&shared, 3, &unknown) == 3 &&
+               apps_owner(&shared, 2, &tv) == 1,
+           "nothing installed, or a title ID of one app: the app itself");
+    /* ...by its pin's name, else by the app's own name */
+    shared.apps[1].pins[0].title_name[0] = '\0';
+    Installed by_name = {.folder = "/data/homebrew/PPSA99003", .version = "01.000.090", .name = " PROSPEROTV "};
+    EXPECT(apps_owner(&shared, 0, &by_name) == 1, "without a pinned name, the app's name (ignoring case and spaces)");
+
+    /* the newest channel: GitHub's list read with its pre-releases */
+    size_t length;
+    char *latest = slurp("releases/Physalis-latest.json", &length);
+    char *pre = strdup(latest);
+    char *at = strstr(pre, "\"prerelease\":false");
+    const size_t size = length * 2 + 64;
+    char *list = malloc(size);
+    EXPECT(at != NULL, "the fixture says it is not a pre-release");
+    if (at)
+    {
+        memcpy(at, "\"prerelease\":true ", 18);
+        snprintf(list, size, "[%s,%s]", pre, latest);
+        github_release_asset out[4];
+        github_release_files files[4];
+        EXPECT(github_release_list_read_any(list, strlen(list), "Oliv3rmoon/Physalis", "PPSA99003.zip", "SHA256SUMS",
+                                            out, files, 4, 1) == 2 &&
+                   out[0].prerelease == 1 && out[1].prerelease == 0,
+               "with pre-releases: the pre-release first, said to be one");
+        EXPECT(github_release_list_read_any(list, strlen(list), "Oliv3rmoon/Physalis", "PPSA99003.zip", "SHA256SUMS",
+                                            out, files, 4, 0) == 1 &&
+                   out[0].prerelease == 0,
+               "without: the pre-release left out, as before");
+        github_release_asset one;
+        github_release_files one_files;
+        EXPECT(github_release_asset_read(pre, strlen(pre), "PPSA99003.zip", "SHA256SUMS", &one, &one_files) ==
+                       GITHUB_RELEASE_NOT_PUBLISHED &&
+                   github_release_asset_read_any(pre, strlen(pre), "PPSA99003.zip", "SHA256SUMS", &one, &one_files,
+                                                 1) == GITHUB_RELEASE_NEWER &&
+                   one.prerelease == 1,
+               "releases/latest's reader never takes a pre-release; asked to, it does");
+    }
+    free(list);
+    free(pre);
+    free(latest);
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3)
@@ -1396,6 +1534,7 @@ int main(int argc, char **argv)
     check_custom();
     check_versions();
     check_roots();
+    check_new_line();
     printf("%s store: %d checks, %d failed\n", failed ? "FAIL" : "PASS", passed + failed, failed);
     return failed ? 1 : 0;
 }

@@ -17,7 +17,8 @@
 
 Solanum, a Nightshade app named after the genus at the heart of the nightshade family, is a PS5 homebrew
 store. It lists the 56 apps of the open catalog at
-[Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog), installs and updates each one
+[Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog) (also on the web, with a page for each
+app: **<https://oliv3rmoon.github.io/Solanum-Catalog/>**), installs and updates each one
 from its own GitHub releases after checking the download against the SHA-256 the catalog pinned for it, shows what
 changed before an update, rolls back, installs older versions, uninstalls, and opens what it installed. Its installs
 are those of
@@ -146,9 +147,10 @@ releases, how each app came to be installed) are in `/data/solanum/apps.ini`, cu
 ## Add an app to the catalog
 
 Open a pull request on [Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog): one entry in
-`catalog.json`'s `apps`, as its README says. Open-source homebrew only, with an OSI license and a GitHub release
-whose ZIP holds the app's folder; a checksum file is welcome but no longer needed, since the catalog's workflow
-pins every release. Solanum shows it once the pull request is in.
+`catalog.json`'s `apps`, as its README says (so does the website's
+[Submit your app](https://oliv3rmoon.github.io/Solanum-Catalog/submit/) page). Open-source homebrew only, with an
+OSI license and a GitHub release whose ZIP holds the app's folder; a checksum file is welcome but no longer needed,
+since the catalog's workflow pins every release. Solanum shows it once the pull request is in.
 
 ## Custom catalogs
 

@@ -8,10 +8,15 @@
                         catalog's pattern and the apps' real releases (tests/fixtures), checksums (a download
                         that isn't the release's is refused before anything is unpacked), resuming an
                         interrupted download, where an app is and what is offered, the launch payload's
-                        conversation, the Konami code, and a random tip or egg;
+                        conversation, the Konami code, and a random tip or egg; and 0.2.0's: the catalog's
+                        pinned hashes (a release with no checksum file offered with its pin, a file that changed
+                        after it was pinned refused), tags and search, custom catalogs (third-party: never
+                        family, attested or pinned), holds and skips, the kept ZIPs a roll back installs from
+                        without the network, a repository's list of releases, and every folder apps are found in;
   tests/helper_check.cpp the install helper's whole conversation (helper/self_update_helper): an app installed
-                        beside Solanum or updated in its own folder, a download that isn't the one announced
-                        refused, and nothing left behind.
+                        beside Solanum, in a folder chosen for it on another drive, or updated in its own folder,
+                        a download that isn't the one announced refused, an uninstall (its folder, its home-screen
+                        entry, its data folder when asked, never the running app's), and nothing left behind.
 
 CC and CXX name other compilers (default: clang, clang++). Also checks what the payloads write where, and that
 the store asks only the catalog and the apps' own repositories."""
@@ -50,7 +55,8 @@ class StoreTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "store-check"
             sources = [ROOT / "tests/store_check.c", ROOT / "src/catalog.c", ROOT / "src/apps.c",
-                       ROOT / "src/resume.c", ROOT / "src/util.c", *[ROOT / "kit" / name for name in KIT]]
+                       ROOT / "src/resume.c", ROOT / "src/util.c", ROOT / "src/prefs.c", ROOT / "src/keep.c",
+                       ROOT / "src/custom.c", *[ROOT / "kit" / name for name in KIT]]
             subprocess.run([cc, "-std=c11", "-O1", *SANITIZE, "-Wall", "-Wextra", "-Wpedantic", "-Werror",
                             "-UNDEBUG", "-DUPDATE_CHECK_NO_NETWORK=1", "-I" + str(ROOT / "kit"),
                             "-I" + str(ROOT / "src"), *map(str, sources), "-pthread", "-o", str(executable)],
@@ -93,21 +99,47 @@ class StoreTest(unittest.TestCase):
         launch = (ROOT / "helper/app_launch/main.c").read_text(encoding="utf-8")
         self.assertIn('#define LAUNCH_LOG "/data/solanum/logs/app-launch.log"', launch)
 
-    def test_the_store_asks_only_the_catalog_and_the_apps_releases(self):
+    def test_the_store_asks_only_the_catalogs_and_the_apps_releases(self):
         catalog = (ROOT / "src/catalog.h").read_text(encoding="utf-8")
         self.assertIn('"https://raw.githubusercontent.com/Oliv3rmoon/Solanum-Catalog/main/catalog.json"', catalog)
         nightshade = (ROOT / "src/nightshade.h").read_text(encoding="utf-8")
         self.assertIn('#define NP_TITLE_ID "PPSA76526"', nightshade)
         self.assertIn('#define NP_DATA "/data/solanum"', nightshade)
-        # Every address the store's own sources name: the catalog, GitHub's API and its release downloads. No
-        # address comes from anywhere else: there is no "add any URL".
+        # Every address the store's own sources name: the catalogs (Solanum's, and a custom one's catalog.json on
+        # raw.githubusercontent.com or the HTTPS address the player typed), GitHub's API and its release downloads.
         allowed = ("https://raw.githubusercontent.com/Oliv3rmoon/Solanum-Catalog/", "https://api.github.com/",
                    "https://github.com/")
-        for name in ("store.c", "store_console.c", "catalog.h", "catalog.c", "apps.c", "resume.c", "ui/store_ui.c",
-                     "ui/page.c", "ui/keyboard.c", "main.c"):
+        custom = allowed + ("https://raw.githubusercontent.com/",)
+        for name in ("store.c", "store_console.c", "catalog.h", "catalog.c", "apps.c", "resume.c", "custom.c",
+                     "keep.c", "prefs.c", "ui/store_ui.c", "ui/page.c", "ui/keyboard.c", "ui/settings.c",
+                     "ui/overlay.c", "platform/keys.c", "main.c"):
             text = (ROOT / "src" / name).read_text(encoding="utf-8")
             for url in re.findall(r'"(https?://[^"]*)', text):
-                self.assertTrue(url.startswith(allowed), f"{name}: {url}")
+                if name == "custom.c" and url == "https://":
+                    continue  # the scheme an address the player types must have
+                self.assertTrue(url.startswith(custom if name in ("store.c", "custom.c") else allowed),
+                                f"{name}: {url}")
+        # A download is only ever an app's own GitHub release, whatever catalog listed it.
+        for name in ("store.c", "apps.c"):
+            text = (ROOT / "src" / name).read_text(encoding="utf-8")
+            for made in re.findall(r'"https://github\.com/[^"]*"', text):
+                self.assertTrue(made.startswith(('"https://github.com/%s/releases/download/',
+                                                 '"https://github.com/%s/releases/tag/')), f"{name}: {made}")
+
+    def test_the_helper_and_the_catalog_keep_the_same_folders(self):
+        """An uninstall removes an app's data folder only when the catalog and the helper both allow it: the same
+        folders of /data are the console's, the HEN's, ShadowMountPlus's or Solanum's in both."""
+        def kept(path, start):
+            text = (ROOT / path).read_text(encoding="utf-8")
+            block = text[text.index(start):]
+            block = block[block.index("{") + 1:block.index("}")]
+            return sorted(re.findall(r'"([^"]+)"', block))
+        helper = kept("helper/self_update_helper/updater.cpp", "static const char *const kept[]")
+        catalog = kept("src/catalog.c", "static const char *const kept[]")
+        self.assertEqual(helper, catalog)
+        self.assertIn("homebrew", helper)
+        self.assertIn("etahen", helper)
+        self.assertIn("solanum", helper)
 
 
 if __name__ == "__main__":

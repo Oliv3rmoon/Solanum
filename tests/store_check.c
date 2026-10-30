@@ -18,6 +18,9 @@
 #define _DEFAULT_SOURCE 1 /* glibc: lstat, strdup, usleep under -std=c11 */
 #include "../src/apps.h"
 #include "../src/catalog.h"
+#include "../src/custom.h"
+#include "../src/keep.h"
+#include "../src/prefs.h"
 #include "../src/nightshade.h"
 #include "../src/resume.h"
 
@@ -943,6 +946,383 @@ static void check_pick(void)
     EXPECT(apps_pick(8, 99, &state) >= 0, "a previous one out of range is no previous");
 }
 
+/* ---------------------------------------------------------------- 0.2.0: the catalog's pins, tags, data folders */
+
+static const char *const PIN_SHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+static const char *const OLD_SHA = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
+/* A catalog of one app with a pinned release, its older pins, tags, author, stars and a data folder. */
+static const char PINNED[] =
+    "{\"schema\":1,\"apps\":["
+    "{\"id\":\"kodi\",\"name\":\"Kodi\",\"category\":\"media\",\"summary\":\"s\",\"title_id\":\"PPSA99420\","
+    "\"repo\":\"Notedop/xbmc-ps5\",\"asset\":\"Kodi-{version}.zip\",\"folder\":\"PPSA99420\",\"checksums\":\"SHA256SUMS\","
+    "\"attested\":false,\"license\":\"GPL-2.0-or-later\",\"author\":\"Notedop\",\"stars\":42,"
+    "\"tags\":[\"media-player\",\"kodi\",\"Bad Tag\",\"video\"],\"data\":\"/data/kodi\","
+    "\"release\":{\"tag\":\"v22.0.1\",\"asset\":\"Kodi-22.0.1.zip\",\"size\":1000,"
+    "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
+    "\"published_at\":\"2026-10-20T10:00:00Z\",\"notes\":\"## Fixed\\n- **Faster** start\"},"
+    "\"pins\":[{\"tag\":\"v22.0.0\",\"asset\":\"Kodi-22.0.0.zip\",\"size\":900,"
+    "\"sha256\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\"},"
+    "{\"tag\":\"v21.9.0\",\"asset\":\"Elsewhere.zip\",\"size\":900,"
+    "\"sha256\":\"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210\"}]},"
+    "{\"id\":\"jelly\",\"name\":\"Jelly5\",\"category\":\"media\",\"summary\":\"s\",\"title_id\":\"PPSA99505\","
+    "\"repo\":\"o/jelly5\",\"asset\":\"Jelly5-{content}.zip\",\"folder\":\".\",\"checksums\":\"SHA256SUMS\","
+    "\"attested\":false,\"license\":\"GPL-3.0\",\"data\":\"/data/homebrew\","
+    "\"release\":{\"tag\":\"v0.7.0\",\"asset\":\"Jelly5-0.7.0.zip\",\"size\":5,"
+    "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}}"
+    "]}";
+
+static void check_pins(void)
+{
+    char name[128];
+    log_count = 0;
+    EXPECT(catalog_parse(PINNED, sizeof(PINNED) - 1, &catalog, collect, NULL) == 2, "pinned apps are read");
+    const CatalogApp *kodi = &catalog.apps[0], *jelly = &catalog.apps[1];
+    EXPECT(strcmp(kodi->author, "Notedop") == 0 && kodi->stars == 42 && strcmp(kodi->data, "/data/kodi") == 0,
+           "author, stars and data folder");
+    EXPECT(kodi->tag_count == 3 && strcmp(kodi->tags[0], "media-player") == 0 && strcmp(kodi->tags[2], "video") == 0 &&
+               logged("tag 2 is not lowercase"),
+           "tags: the good ones kept, a bad one logged");
+    EXPECT(kodi->pin_count == 2 && strcmp(kodi->pins[0].tag, "v22.0.1") == 0 && kodi->pins[0].size == 1000 &&
+               strcmp(kodi->pins[1].tag, "v22.0.0") == 0 && logged("an older pin can't be read"),
+           "the pinned release and an older pin; a pin of another file is left out");
+    EXPECT(strcmp(kodi->published, "2026-10-20T10:00:00Z") == 0 && strstr(kodi->notes, "Faster"), "its date and notes");
+    EXPECT(jelly->pin_count == 0 && jelly->data[0] == '\0' && logged("isn't its file") &&
+               logged("is not a folder of its own in /data"),
+           "a pin whose file isn't the pattern's, and /data/homebrew as a data folder, are left out");
+    EXPECT(github_release_asset_name("Jelly5-{content}.zip", "v0.7.0", name, sizeof(name)) &&
+               strcmp(name, "Jelly5-00.007.000.zip") == 0 && strcmp(jelly->folder, ".") == 0,
+           "{content} is the tag as a content version; '.' is a ZIP whose root is the app");
+    EXPECT(!github_release_asset_name("Jelly5-{content}.zip", "nightly", name, sizeof(name)),
+           "{content} of a tag that isn't three numbers names nothing");
+
+    /* The release from the pin, with nothing asked of GitHub. */
+    github_release_asset release;
+    EXPECT(apps_release_from_pin(kodi, 0, &release) && release.pinned && strcmp(release.sha256, PIN_SHA) == 0 &&
+               strcmp(release.url, "https://github.com/Notedop/xbmc-ps5/releases/download/v22.0.1/Kodi-22.0.1.zip") ==
+                   0 &&
+               release.size == 1000 && strstr(release.notes, "Faster") && !strstr(release.notes, "**"),
+           "the pinned release, its address made from the repository, its notes laid out");
+    EXPECT(apps_release_from_pin(kodi, 1, &release) && strcmp(release.tag, "v22.0.0") == 0 && !release.notes[0],
+           "an older pin");
+    EXPECT(!apps_release_from_pin(jelly, 0, &release), "no pin, no release");
+    EXPECT(apps_pin_for(kodi, "v22.0.0", "Kodi-22.0.0.zip") == 1 && apps_pin_for(kodi, "v9", NULL) == -1,
+           "a pin by its tag");
+
+    /* GitHub's answer checked against the pins. */
+    github_release_asset asked;
+    memset(&asked, 0, sizeof(asked));
+    snprintf(asked.tag, sizeof(asked.tag), "v22.0.1");
+    snprintf(asked.name, sizeof(asked.name), "Kodi-22.0.1.zip");
+    asked.size = 1000;
+    EXPECT(apps_check_pin(kodi, GITHUB_RELEASE_NO_HASH, &asked) == GITHUB_RELEASE_NEWER && asked.pinned &&
+               strcmp(asked.sha256, PIN_SHA) == 0 && strstr(asked.url, "/releases/download/v22.0.1/Kodi-22.0.1.zip"),
+           "a release with no checksum file and no digest is offered with the pinned SHA-256");
+    github_release_asset other = asked;
+    other.size = 999;
+    other.sha256[0] = '\0';
+    other.pinned = 0;
+    EXPECT(apps_check_pin(kodi, GITHUB_RELEASE_NO_HASH, &other) == GITHUB_RELEASE_HASHES_DIFFER && !other.sha256[0],
+           "a file of another size than the pinned one is refused");
+    github_release_asset digest = asked;
+    snprintf(digest.sha256, sizeof(digest.sha256), "%s", OLD_SHA);
+    digest.pinned = 0;
+    EXPECT(apps_check_pin(kodi, GITHUB_RELEASE_NEWER, &digest) == GITHUB_RELEASE_HASHES_DIFFER && !digest.sha256[0],
+           "a checksum file or digest that disagrees with the pin: the file changed after it was pinned, refused");
+    github_release_asset agrees = asked;
+    snprintf(agrees.sha256, sizeof(agrees.sha256), "%s", PIN_SHA);
+    agrees.pinned = 0;
+    EXPECT(apps_check_pin(kodi, GITHUB_RELEASE_NEWER, &agrees) == GITHUB_RELEASE_NEWER && agrees.pinned,
+           "a digest that agrees with the pin: pinned and checked twice");
+    github_release_asset newer = asked;
+    snprintf(newer.tag, sizeof(newer.tag), "v22.0.2");
+    snprintf(newer.name, sizeof(newer.name), "Kodi-22.0.2.zip");
+    newer.sha256[0] = '\0';
+    newer.pinned = 0;
+    EXPECT(apps_check_pin(kodi, GITHUB_RELEASE_NO_HASH, &newer) == GITHUB_RELEASE_NO_HASH,
+           "a newer release the catalog hasn't pinned, with no checksum: still not offered");
+    EXPECT(apps_check_pin(kodi, GITHUB_RELEASE_RATE_LIMITED, &asked) == GITHUB_RELEASE_RATE_LIMITED,
+           "other answers pass through");
+
+    EXPECT(catalog_data_folder_valid("/data/nightshade") && catalog_data_folder_valid("/data/Kodi_Data-2") &&
+               !catalog_data_folder_valid("/data/etaHEN") && !catalog_data_folder_valid("/data/solanum") &&
+               !catalog_data_folder_valid("/data/a/b") && !catalog_data_folder_valid("/data/..") &&
+               !catalog_data_folder_valid("/user/data") && !catalog_data_folder_valid("/data/"),
+           "data folders: one of its own in /data, never one the console, the HEN or Solanum keeps");
+}
+
+static void check_merge(void)
+{
+    static Catalog official, custom;
+    size_t length;
+    char *json = slurp("catalog.json", &length);
+    EXPECT(catalog_parse(json, length, &official, NULL, NULL) == 4, "Solanum's catalog");
+    free(json);
+    static const char third[] =
+        "{\"schema\":1,\"apps\":["
+        "{\"id\":\"nightshade\",\"name\":\"Fake Nightshade\",\"category\":\"emulator\",\"summary\":\"s\","
+        "\"title_id\":\"ABCD00001\",\"repo\":\"evil/n\",\"asset\":\"a.zip\",\"folder\":\"f\",\"checksums\":\"SHA256SUMS\","
+        "\"attested\":true,\"license\":\"MIT\"},"
+        "{\"id\":\"other\",\"name\":\"Same title\",\"category\":\"emulator\",\"summary\":\"s\","
+        "\"title_id\":\"PPSA99008\",\"repo\":\"evil/o\",\"asset\":\"a.zip\",\"folder\":\"f\",\"checksums\":\"SHA256SUMS\","
+        "\"attested\":true,\"license\":\"MIT\"},"
+        "{\"id\":\"newapp\",\"name\":\"New\",\"family\":true,\"category\":\"tool\",\"summary\":\"s\","
+        "\"title_id\":\"ABCD00002\",\"repo\":\"someone/new\",\"asset\":\"New-{version}.zip\",\"folder\":\"f\","
+        "\"checksums\":\"SHA256SUMS\",\"attested\":true,\"license\":\"MIT\",\"data\":\"/data/newapp\",\"stars\":9000,"
+        "\"release\":{\"tag\":\"v1.0.0\",\"asset\":\"New-1.0.0.zip\",\"size\":10,"
+        "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}}"
+        "]}";
+    EXPECT(catalog_parse(third, sizeof(third) - 1, &custom, NULL, NULL) == 3, "a custom catalog");
+    int hidden = 0;
+    EXPECT(catalog_merge(&official, &custom, 1, &hidden) == 1 && hidden == 2 && official.app_count == 5,
+           "a custom catalog's apps whose id or title ID another catalog lists are left out");
+    const CatalogApp *added = &official.apps[4];
+    EXPECT(strcmp(added->id, "newapp") == 0 && added->source == 1 && !added->family && !added->attested &&
+               !added->data[0] && added->pin_count == 0 && added->stars == 0,
+           "a third-party app: never family, never attested, no data folder to remove, no pins, no stars");
+    EXPECT(official.apps[0].source == 0 && strcmp(official.apps[0].repo, "Oliv3rmoon/Nightshade") == 0,
+           "Solanum's own apps stay as they are");
+}
+
+static void check_search(void)
+{
+    log_count = 0;
+    catalog_parse(PINNED, sizeof(PINNED) - 1, &catalog, NULL, NULL);
+    const CatalogApp *kodi = &catalog.apps[0];
+    EXPECT(apps_matches(kodi, "") && apps_matches(kodi, "KOD") && apps_matches(kodi, "notedop") &&
+               apps_matches(kodi, "media") && apps_matches(kodi, "player"),
+           "a search looks in the name, the author, the category and the tags, whatever the case");
+    EXPECT(apps_matches(kodi, "#kodi") && apps_matches(kodi, "#Media-Player") && apps_matches(kodi, "tag:video") &&
+               !apps_matches(kodi, "#media") && !apps_matches(kodi, "#") && !apps_matches(kodi, "emulator"),
+           "#tag is a tag exactly");
+    EXPECT(apps_update_wanted(OFFER_UPDATE, false, "", "v2") && !apps_update_wanted(OFFER_UPDATE, true, "", "v2") &&
+               !apps_update_wanted(OFFER_UPDATE, false, "v2", "v2") && apps_update_wanted(OFFER_UPDATE, false, "v1", "v2") &&
+               !apps_update_wanted(OFFER_CURRENT, false, "", "v2"),
+           "updates: not when held, not the skipped release, a newer one again");
+}
+
+static void check_prefs(void)
+{
+    char path[600];
+    snprintf(path, sizeof(path), "%s/apps.ini", scratch);
+    remove(path);
+    prefs_load(path);
+    EXPECT(prefs_count() == 0 && prefs_get("PPSA99003", false) == NULL, "no file, no decisions");
+    AppPrefs *one = prefs_get("PPSA99003", true);
+    one->hold = true;
+    AppPrefs *two = prefs_get("PPSA99002", true);
+    snprintf(two->skip, sizeof(two->skip), "v1.2.3");
+    two->by = BY_HAND;
+    EXPECT(prefs_get("not a title", true) == NULL, "only title IDs");
+    EXPECT(prefs_save(), "saved");
+    prefs_load(path);
+    one = prefs_get("PPSA99003", false);
+    two = prefs_get("PPSA99002", false);
+    EXPECT(prefs_count() == 2 && one && one->hold && !one->skip[0] && two && !two->hold &&
+               strcmp(two->skip, "v1.2.3") == 0 && two->by == BY_HAND,
+           "read back: a hold, a skipped release, an app taken over");
+    prefs_forget_install("PPSA99002");
+    EXPECT(two->by == BY_UNKNOWN && strcmp(two->skip, "v1.2.3") == 0, "an uninstall forgets how, keeps the skip");
+}
+
+static int never_range(void *user, const char *url, uint64_t offset, uint64_t limit, self_update_sink sink,
+                       void *sink_user, int *status)
+{
+    (void)url, (void)offset, (void)limit, (void)sink, (void)sink_user;
+    ++*(int *)user;
+    *status = 0;
+    return -1;
+}
+
+static void check_keep(void)
+{
+    char cache[600], download[700], zip[700];
+    static char first[4000], second[5000];
+    snprintf(cache, sizeof(cache), "%s/keep-cache", scratch);
+    mkdir(cache, 0755);
+    for (size_t i = 0; i < sizeof(first); ++i)
+        first[i] = (char)(i * 3 + 1);
+    for (size_t i = 0; i < sizeof(second); ++i)
+        second[i] = (char)(i * 5 + 2);
+    KeptZip a, b, read;
+    memset(&a, 0, sizeof(a));
+    snprintf(a.tag, sizeof(a.tag), "v1.0.0");
+    snprintf(a.version, sizeof(a.version), "01.000.000");
+    sha256_hex(first, sizeof(first), a.sha256);
+    a.size = sizeof(first);
+    snprintf(a.url, sizeof(a.url), "https://github.com/o/app/releases/download/v1.0.0/App.zip");
+    snprintf(a.name, sizeof(a.name), "App.zip");
+    b = a;
+    snprintf(b.tag, sizeof(b.tag), "v1.1.0");
+    snprintf(b.version, sizeof(b.version), "01.001.000");
+    sha256_hex(second, sizeof(second), b.sha256);
+    b.size = sizeof(second);
+    snprintf(b.url, sizeof(b.url), "https://github.com/o/app/releases/download/v1.1.0/App.zip");
+
+    snprintf(download, sizeof(download), "%s/PPSA11111-a.zip.part", cache);
+    write_file(download, first, sizeof(first));
+    EXPECT(keep_store(cache, "PPSA11111", download, &a) && keep_read(cache, "PPSA11111", KEEP_CURRENT, &read) &&
+               strcmp(read.tag, "v1.0.0") == 0 && !keep_read(cache, "PPSA11111", KEEP_PREVIOUS, &read) &&
+               size_of(download) == 0,
+           "an install's download is kept as the current version");
+    write_file(download, second, sizeof(second));
+    EXPECT(keep_store(cache, "PPSA11111", download, &b) && keep_read(cache, "PPSA11111", KEEP_CURRENT, &read) &&
+               strcmp(read.tag, "v1.1.0") == 0 && keep_read(cache, "PPSA11111", KEEP_PREVIOUS, &read) &&
+               strcmp(read.tag, "v1.0.0") == 0 && strcmp(read.version, "01.000.000") == 0,
+           "the next update's: the one before becomes the previous version");
+    EXPECT(keep_size(cache) == sizeof(first) + sizeof(second), "what the kept ZIPs take");
+
+    /* Roll back: the previous ZIP handed on whole, not a byte asked of the network, checked as any download. */
+    ResumeDownload d;
+    memset(&d, 0, sizeof(d));
+    int asked = 0;
+    keep_paths(cache, "PPSA11111", KEEP_PREVIOUS, d.part, sizeof(d.part), NULL, 0);
+    snprintf(d.sha256, sizeof(d.sha256), "%s", read.sha256);
+    d.size = read.size;
+    d.range = never_range;
+    d.range_user = &asked;
+    Received got = {NULL, 0};
+    EXPECT(resume_download(&d, read.url, read.size, receive, &got) == 0 && asked == 0 && got.length == sizeof(first) &&
+               memcmp(got.data, first, sizeof(first)) == 0 && !d.mismatch && d.reused == sizeof(first),
+           "a roll back hands on the kept ZIP whole without asking the network");
+    free(got.data);
+    EXPECT(keep_swap(cache, "PPSA11111") && keep_read(cache, "PPSA11111", KEEP_CURRENT, &read) &&
+               strcmp(read.tag, "v1.0.0") == 0 && keep_read(cache, "PPSA11111", KEEP_PREVIOUS, &read) &&
+               strcmp(read.tag, "v1.1.0") == 0,
+           "after a roll back the two swap: the next one goes forward again");
+
+    /* A kept ZIP that went wrong is caught like a download that did. */
+    keep_paths(cache, "PPSA11111", KEEP_PREVIOUS, zip, sizeof(zip), NULL, 0);
+    FILE *f = fopen(zip, "r+b");
+    fputc('X', f);
+    fclose(f);
+    memset(&d, 0, sizeof(d));
+    snprintf(d.part, sizeof(d.part), "%s", zip);
+    snprintf(d.sha256, sizeof(d.sha256), "%s", read.sha256);
+    d.size = read.size;
+    d.range = never_range;
+    d.range_user = &asked;
+    Received bad = {NULL, 0};
+    EXPECT(resume_download(&d, read.url, read.size, receive, &bad) == 0 && d.mismatch && size_of(zip) == 0 &&
+               !keep_read(cache, "PPSA11111", KEEP_PREVIOUS, &read),
+           "a kept ZIP that no longer matches is deleted, never installed");
+    free(bad.data);
+    keep_forget(cache, "PPSA11111");
+    EXPECT(!keep_read(cache, "PPSA11111", KEEP_CURRENT, &read) && keep_size(cache) == 0, "an uninstall forgets them");
+}
+
+static void check_custom(void)
+{
+    char out[CUSTOM_TEXT], why[160], path[600];
+    EXPECT(custom_normalise("someone/their-catalog", out, sizeof(out)) && strcmp(out, "someone/their-catalog") == 0,
+           "owner/name");
+    EXPECT(custom_normalise(" https://github.com/someone/cat/ ", out, sizeof(out)) &&
+               strcmp(out, "someone/cat") == 0,
+           "a repository's page is the repository");
+    EXPECT(custom_normalise("https://example.com/ps5/catalog.json", out, sizeof(out)) &&
+               strcmp(out, "https://example.com/ps5/catalog.json") == 0,
+           "an HTTPS address");
+    EXPECT(!custom_normalise("http://example.com/catalog.json", out, sizeof(out)) &&
+               !custom_normalise("https://exa mple.com/c.json", out, sizeof(out)) &&
+               !custom_normalise("https://localhost/c.json", out, sizeof(out)) &&
+               !custom_normalise("https://user@example.com/c.json", out, sizeof(out)) &&
+               !custom_normalise("ftp://x/y", out, sizeof(out)) && !custom_normalise("", out, sizeof(out)) &&
+               !custom_normalise("not a repo", out, sizeof(out)),
+           "no plain HTTP, no spaces, no host without a dot, no user in the address");
+    snprintf(path, sizeof(path), "%s/catalogs.ini", scratch);
+    remove(path);
+    custom_load(path);
+    EXPECT(custom_add("someone/cat", why, sizeof(why)) && custom_add("https://example.com/c.json", why, sizeof(why)),
+           "two added");
+    EXPECT(!custom_add("https://github.com/someone/cat", why, sizeof(why)) && strstr(why, "already"),
+           "the same one twice is refused");
+    EXPECT(!custom_add("Oliv3rmoon/Solanum-Catalog", why, sizeof(why)), "Solanum's own catalog isn't a custom one");
+    custom_url(0, out, sizeof(out));
+    EXPECT(strcmp(out, "https://raw.githubusercontent.com/someone/cat/HEAD/catalog.json") == 0,
+           "a repository's catalog.json from raw.githubusercontent.com");
+    custom_name(1, out, sizeof(out));
+    EXPECT(strcmp(out, "example.com") == 0, "an address is named by its host");
+    EXPECT(custom_save(), "saved");
+    custom_load(path);
+    EXPECT(custom_count() == 2 && strcmp(custom_text(1), "https://example.com/c.json") == 0, "read back, in order");
+    custom_remove(0);
+    EXPECT(custom_count() == 1 && strcmp(custom_text(0), "https://example.com/c.json") == 0, "one removed");
+    for (int i = 0; i < 10; ++i)
+    {
+        char repo[32];
+        snprintf(repo, sizeof(repo), "someone/c%d", i);
+        custom_add(repo, why, sizeof(why));
+    }
+    EXPECT(custom_count() == CUSTOM_MAX && strstr(why, "Eight"), "eight at most");
+    char copy_a[700], copy_b[700];
+    custom_copy_path("/c", "https://a.example/c.json", copy_a, sizeof(copy_a));
+    custom_copy_path("/c", "https://b.example/c.json", copy_b, sizeof(copy_b));
+    EXPECT(strcmp(copy_a, copy_b) != 0 && strncmp(copy_a, "/c/catalog-", 11) == 0, "each catalog's copy its own file");
+}
+
+static void check_versions(void)
+{
+    size_t length;
+    char *latest = slurp("releases/Physalis-latest.json", &length);
+    /* GitHub's list: the latest release, a draft, a pre-release, and one without the file */
+    const size_t size = length * 4 + 64;
+    char *list = malloc(size);
+    char *draft = strdup(latest), *pre = strdup(latest);
+    char *at = strstr(draft, "\"draft\": false");
+    if (!at)
+        at = strstr(draft, "\"draft\":false");
+    if (at)
+        memcpy(strchr(at, ':') + 1, strchr(at, ':')[1] == ' ' ? " true," : "true,", strchr(at, ':')[1] == ' ' ? 6 : 5);
+    snprintf(list, size, "[%s,%s,{\"tag_name\":\"x\",\"assets\":[],\"draft\":false,\"prerelease\":false}]", latest,
+             at ? draft : "{}");
+    github_release_asset out[GITHUB_RELEASE_LIST_MAX];
+    github_release_files files[GITHUB_RELEASE_LIST_MAX];
+    const int count =
+        github_release_list_read(list, strlen(list), "Oliv3rmoon/Physalis", "PPSA99003.zip", "SHA256SUMS", out, files,
+                                 GITHUB_RELEASE_LIST_MAX);
+    EXPECT(count == 1 && strcmp(out[0].tag, "01.002.001") == 0 && out[0].sha256[0] && files[0].sums_files == 1 &&
+               strcmp(out[0].url, "https://github.com/Oliv3rmoon/Physalis/releases/download/01.002.001/PPSA99003.zip") ==
+                   0,
+           "a repository's releases: the published one with the file kept, its digest and address");
+    EXPECT(github_release_list_read("{\"message\":\"Not Found\"}", 24, "o/r", "a.zip", "SHA256SUMS", out, files, 5) ==
+                   -1 &&
+               github_release_list_read("[]", 2, "o/r", "a.zip", "SHA256SUMS", out, files, 5) == 0,
+           "an answer that isn't a list; an empty list");
+    char url[200];
+    EXPECT(github_release_list_url(url, sizeof(url), "o/r", 20) &&
+               strcmp(url, "https://api.github.com/repos/o/r/releases?per_page=20") == 0,
+           "the list's address");
+    free(list);
+    free(draft);
+    free(pre);
+    free(latest);
+}
+
+static void check_roots(void)
+{
+    char roots[40][48], folder[700];
+    const int count = apps_console_roots(roots, 40);
+    EXPECT(count == 32 && strcmp(roots[0], "/data/homebrew") == 0 && strcmp(roots[1], "/data/etaHEN/games") == 0 &&
+               strcmp(roots[2], "/mnt/ext0/homebrew") == 0 && strcmp(roots[4], "/mnt/ext0") == 0 &&
+               strcmp(roots[31], "/mnt/usb7") == 0,
+           "the folders ShadowMountPlus scans, as the helper lists them");
+    EXPECT(strcmp(apps_place(0), "/data/homebrew") == 0 && strcmp(apps_place(3), "/mnt/usb0/homebrew") == 0 &&
+               strcmp(apps_place_drive(10), "/mnt/usb7") == 0 && apps_place(11)[0] == '\0',
+           "where a new app can go");
+    /* an app installed by hand on a USB drive, in a folder of any name */
+    char usb[600], data[600];
+    snprintf(usb, sizeof(usb), "%s/roots/usb0/homebrew", scratch);
+    snprintf(data, sizeof(data), "%s/roots/data/homebrew", scratch);
+    snprintf(folder, sizeof(folder), "%s/Kodi for PS5/sce_sys/param.json", usb);
+    const char param[] = "{\"titleId\":\"PPSA99420\",\"contentVersion\":\"22.000.000\"}";
+    write_file(folder, param, sizeof(param) - 1);
+    mkdir(data, 0755);
+    const char *where[2] = {data, usb};
+    const Installed found = apps_find_in("PPSA99420", NULL, where, 2);
+    EXPECT(strstr(found.folder, "/usb0/homebrew/Kodi for PS5") && strcmp(found.version, "22.000.000") == 0,
+           "an app installed by hand on a USB drive is found, whatever its folder's name");
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3)
@@ -960,6 +1340,14 @@ int main(int argc, char **argv)
     check_launch();
     check_konami();
     check_pick();
+    check_pins();
+    check_merge();
+    check_search();
+    check_prefs();
+    check_keep();
+    check_custom();
+    check_versions();
+    check_roots();
     printf("%s store: %d checks, %d failed\n", failed ? "FAIL" : "PASS", passed + failed, failed);
     return failed ? 1 : 0;
 }

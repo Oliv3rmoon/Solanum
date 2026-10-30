@@ -45,6 +45,19 @@ Installed apps_find(const char *title, const char *registered, const char *own_f
 /* The bytes of every file under a folder (at most 32 folders deep); false when it can't all be read. */
 bool apps_folder_size(const char *folder, uint64_t *bytes);
 
+/* 0.2.0: an app's folder looked for in every folder ShadowMountPlus scans, as the install helper does: `roots` are
+ * folders whose children may be apps (on the console apps_console_roots's). The one ShadowMountPlus recorded first,
+ * then the folder named after the title in each root, then any folder of a root. */
+Installed apps_find_in(const char *title, const char *registered, const char *const *roots, int root_count);
+/* The console's: <drive>/homebrew and <drive>/etaHEN/games of /data, the two extended drives and eight USB drives, and
+ * the extended and USB drives themselves (the helper's default_roots). Returns how many (at most `most`). */
+int apps_console_roots(char roots[][48], int most);
+/* Where a new app can be put: <drive>/homebrew of /data, /mnt/ext0..1 and /mnt/usb0..7 (the helper's install-to
+ * folders). */
+#define APPS_PLACES 11
+const char *apps_place(int index);       /* "/data/homebrew", "/mnt/ext0/homebrew"... */
+const char *apps_place_drive(int index); /* "/data", "/mnt/ext0"... */
+
 /* ---- what a release offers ---- */
 
 /* The content version a release's tag names. Exact: the tag is one ("01.000.090") or as Nightshade names its
@@ -76,6 +89,30 @@ Offer apps_decide(const Installed *installed, bool found, const char *tag);
  * own title. */
 bool apps_make_offer(const CatalogApp *app, const github_release_asset *release, const Installed *installed,
                      const char *asking, self_update_offer *offer);
+
+/* ---- 0.2.0: the catalog's pinned hashes ---- */
+
+/* The release the catalog pinned for an app (pin 0 is its newest; apps_pin_for finds one by tag), as if GitHub had
+ * answered it: tag, name, size, the pinned SHA-256, the download's address and page made from the repository, and for
+ * the newest its date and notes. False when the catalog pinned none. */
+bool apps_release_from_pin(const CatalogApp *app, int pin, github_release_asset *out);
+/* The catalog's pin of the file `asset` of release `tag`, or -1. */
+int apps_pin_for(const CatalogApp *app, const char *tag, const char *asset);
+/* GitHub's answer (github_release_asset_check's `reason` and `asset`) checked against the catalog's pins. A release
+ * with neither a checksum file nor GitHub's digest (GITHUB_RELEASE_NO_HASH) is offered with the pinned SHA-256 when the
+ * catalog pinned that very file of that tag at that size; a release whose checksum or digest differs from the pin, or
+ * whose file is another size, is refused (GITHUB_RELEASE_HASHES_DIFFER: the file changed after it was pinned). The
+ * reason to go by. */
+int apps_check_pin(const CatalogApp *app, int reason, github_release_asset *asset);
+
+/* ---- 0.2.0: finding and choosing ---- */
+
+/* Whether an app matches a search: "#tag" (or "tag:tag") is one of its tags exactly; any other text is looked for,
+ * ignoring case, in its name, summary, id, author, tags and category. An empty search matches all. */
+bool apps_matches(const CatalogApp *app, const char *query);
+/* Whether an installed app's newer release is to be offered as an update: not when updates are held, nor when the
+ * player skipped that very release (skip: its tag, "" none). */
+bool apps_update_wanted(int offer, bool hold, const char *skip, const char *tag);
 
 /* ---- opening it ---- */
 

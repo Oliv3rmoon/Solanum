@@ -10,6 +10,7 @@
 #include "self_update_protocol.h"
 #include "update_check.h"
 
+#include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -208,6 +209,97 @@ Installed apps_find(const char *title, const char *registered, const char *own_f
     return found;
 }
 
+Installed apps_find_in(const char *title, const char *registered, const char *const *roots, int root_count)
+{
+    Installed found;
+    char mounted[512];
+    char path[512];
+    memset(&found, 0, sizeof(found));
+    if (!catalog_title_id_valid(title))
+        return found;
+    if (mounted_from(registered, title, mounted, sizeof(mounted)) && holds(mounted, title, &found))
+        return found;
+    if (registered && registered[0])
+    {
+        snprintf(path, sizeof(path), "%s/app/%s/mount_img.lnk", registered, title);
+        if (is_file(path))
+        {
+            char id[10];
+            found.image = true;
+            snprintf(found.folder, sizeof(found.folder), "%s/app/%s", registered, title);
+            snprintf(path, sizeof(path), "%s/sce_sys/param.json", found.folder);
+            if (!apps_read_param(path, id, found.version) || strcmp(id, title) != 0)
+                found.version[0] = '\0';
+            return found;
+        }
+    }
+    for (int r = 0; r < root_count; ++r)
+    {
+        snprintf(path, sizeof(path), "%s/%s", roots[r], title);
+        if (holds(path, title, &found))
+            return found;
+    }
+    for (int r = 0; r < root_count; ++r)
+    {
+        DIR *directory = opendir(roots[r]);
+        struct dirent *entry;
+        int looked = 0;
+        if (!directory)
+            continue;
+        while ((entry = readdir(directory)) != NULL && looked < 4096)
+        {
+            if (entry->d_name[0] == '.' || strcmp(entry->d_name, title) == 0)
+                continue;
+            ++looked;
+            snprintf(path, sizeof(path), "%s/%s", roots[r], entry->d_name);
+            if (is_directory(path) && holds(path, title, &found))
+            {
+                closedir(directory);
+                return found;
+            }
+        }
+        closedir(directory);
+    }
+    memset(&found, 0, sizeof(found));
+    return found;
+}
+
+static const char *const PLACES[APPS_PLACES] = {
+    "/data/homebrew",      "/mnt/ext0/homebrew",  "/mnt/ext1/homebrew",  "/mnt/usb0/homebrew",
+    "/mnt/usb1/homebrew",  "/mnt/usb2/homebrew",  "/mnt/usb3/homebrew",  "/mnt/usb4/homebrew",
+    "/mnt/usb5/homebrew",  "/mnt/usb6/homebrew",  "/mnt/usb7/homebrew"};
+static const char *const DRIVES[APPS_PLACES] = {"/data",     "/mnt/ext0", "/mnt/ext1", "/mnt/usb0",
+                                                "/mnt/usb1", "/mnt/usb2", "/mnt/usb3", "/mnt/usb4",
+                                                "/mnt/usb5", "/mnt/usb6", "/mnt/usb7"};
+
+const char *apps_place(int index)
+{
+    return index >= 0 && index < APPS_PLACES ? PLACES[index] : "";
+}
+
+const char *apps_place_drive(int index)
+{
+    return index >= 0 && index < APPS_PLACES ? DRIVES[index] : "";
+}
+
+int apps_console_roots(char roots[][48], int most)
+{
+    int count = 0;
+    for (int d = 0; d < APPS_PLACES; ++d)
+    {
+        const char *forms[3] = {"%s/homebrew", "%s/etaHEN/games", "%s"};
+        for (int f = 0; f < 3; ++f)
+        {
+            if (f == 2 && d == 0)
+                continue; /* /data itself holds no apps */
+            if (count == most)
+                return count;
+            snprintf(roots[count++], 48, forms[f], DRIVES[d]);
+        }
+    }
+    return count;
+}
+
 static bool add_sizes(const char *folder, int depth, uint64_t *bytes, int *budget)
 {
     DIR *directory;
@@ -338,6 +430,144 @@ bool apps_make_offer(const CatalogApp *app, const github_release_asset *release,
     snprintf(offer->beside, sizeof(offer->beside), "%s", asking);
     offer->size = release->size;
     return offer->sha256[0] != '\0' && self_update_url_allowed(offer->artifact, 0);
+}
+
+/* ---------------------------------------------------------------- the catalog's pins */
+
+/* https://github.com/<repository>/releases/download/<tag>/<file>, as github_release_asset_check makes it: a tag and
+ * a file that can be in an address (letters, digits, '.', '_' and '-'), an address a download may be made from. */
+static bool download_url(char *out, size_t size, const char *repository, const char *tag, const char *file)
+{
+    char check[160];
+    out[0] = '\0';
+    if (!github_release_repository_valid(repository) || !tag[0] || tag[0] == '.' || strlen(tag) >= 40 ||
+        !github_release_asset_name(tag, "v0", check, sizeof(check)) || !github_release_asset_name(file, "v0", check,
+                                                                                                   sizeof(check)))
+        return false;
+    const int length = snprintf(out, size, "https://github.com/%s/releases/download/%s/%s", repository, tag, file);
+    if (length <= 0 || (size_t)length >= size || !self_update_url_allowed(out, 0))
+    {
+        out[0] = '\0';
+        return false;
+    }
+    return true;
+}
+
+bool apps_release_from_pin(const CatalogApp *app, int pin, github_release_asset *out)
+{
+    const CatalogPin *p;
+    memset(out, 0, sizeof(*out));
+    if (!app || pin < 0 || pin >= app->pin_count)
+        return false;
+    p = &app->pins[pin];
+    str_copy(out->tag, sizeof(out->tag), p->tag);
+    str_copy(out->name, sizeof(out->name), p->asset);
+    str_copy(out->sha256, sizeof(out->sha256), p->sha256);
+    out->size = p->size;
+    out->pinned = 1;
+    if (!download_url(out->url, sizeof(out->url), app->repo, p->tag, p->asset))
+    {
+        memset(out, 0, sizeof(*out));
+        return false;
+    }
+    snprintf(out->page, sizeof(out->page), "https://github.com/%s/releases/tag/%s", app->repo, p->tag);
+    if (pin == 0)
+    {
+        str_copy(out->published, sizeof(out->published), app->published);
+        if (app->notes[0])
+            (void)github_release_notes(app->notes, strlen(app->notes), out->notes, sizeof(out->notes),
+                                       GITHUB_RELEASE_ASSET_NOTE_CHARACTERS, &out->notes_truncated);
+    }
+    return true;
+}
+
+int apps_pin_for(const CatalogApp *app, const char *tag, const char *asset)
+{
+    for (int i = 0; app && tag && i < app->pin_count; ++i)
+        if (strcmp(app->pins[i].tag, tag) == 0 && (!asset || strcmp(app->pins[i].asset, asset) == 0))
+            return i;
+    return -1;
+}
+
+int apps_check_pin(const CatalogApp *app, int reason, github_release_asset *asset)
+{
+    int pin;
+    if (!app || !asset || (reason != GITHUB_RELEASE_NEWER && reason != GITHUB_RELEASE_NO_HASH))
+        return reason;
+    pin = apps_pin_for(app, asset->tag, asset->name);
+    if (pin < 0)
+        return reason;
+    if (asset->size != app->pins[pin].size ||
+        (reason == GITHUB_RELEASE_NEWER && strcmp(asset->sha256, app->pins[pin].sha256) != 0))
+    {
+        asset->sha256[0] = '\0';
+        asset->pinned = 0;
+        return GITHUB_RELEASE_HASHES_DIFFER;
+    }
+    if (reason == GITHUB_RELEASE_NO_HASH)
+    {
+        /* The check stopped before it made the addresses: made here as it makes them. */
+        if (!download_url(asset->url, sizeof(asset->url), app->repo, asset->tag, asset->name))
+            return GITHUB_RELEASE_BAD_TAG;
+        snprintf(asset->page, sizeof(asset->page), "https://github.com/%s/releases/tag/%s", app->repo, asset->tag);
+        str_copy(asset->sha256, sizeof(asset->sha256), app->pins[pin].sha256);
+    }
+    asset->pinned = 1;
+    return GITHUB_RELEASE_NEWER;
+}
+
+/* ---------------------------------------------------------------- finding and choosing */
+
+static bool has_text_ci(const char *text, const char *wanted)
+{
+    const size_t n = strlen(wanted);
+    if (!n)
+        return true;
+    for (const char *t = text; *t; ++t)
+    {
+        size_t i = 0;
+        while (i < n && t[i] && tolower((unsigned char)t[i]) == tolower((unsigned char)wanted[i]))
+            ++i;
+        if (i == n)
+            return true;
+    }
+    return false;
+}
+
+bool apps_matches(const CatalogApp *app, const char *query)
+{
+    char tag[CATALOG_TAG];
+    size_t n = 0;
+    const char *wanted = query;
+    while (*wanted == ' ')
+        ++wanted;
+    if (!*wanted)
+        return true;
+    if (wanted[0] == '#' || strncmp(wanted, "tag:", 4) == 0)
+    {
+        wanted += wanted[0] == '#' ? 1 : 4;
+        while (*wanted && *wanted != ' ' && n + 1 < sizeof(tag))
+        {
+            tag[n++] = (char)tolower((unsigned char)*wanted);
+            ++wanted;
+        }
+        tag[n] = '\0';
+        return n > 0 && catalog_has_tag(app, tag);
+    }
+    if (has_text_ci(app->name, wanted) || has_text_ci(app->summary, wanted) || has_text_ci(app->id, wanted) ||
+        has_text_ci(app->author, wanted) || has_text_ci(catalog_category_title(app->category), wanted))
+        return true;
+    for (int i = 0; i < app->tag_count; ++i)
+        if (has_text_ci(app->tags[i], wanted))
+            return true;
+    return false;
+}
+
+bool apps_update_wanted(int offer, bool hold, const char *skip, const char *tag)
+{
+    if (offer != OFFER_UPDATE || hold)
+        return false;
+    return !(skip && skip[0] && tag && strcmp(skip, tag) == 0);
 }
 
 /* ---------------------------------------------------------------- opening it */

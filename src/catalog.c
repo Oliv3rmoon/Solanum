@@ -86,6 +86,11 @@ static int has_text(const char *text)
     return 0;
 }
 
+static void str_copy_tag(char *out, const char *tag)
+{
+    (void)snprintf(out, CATALOG_TAG, "%s", tag);
+}
+
 /* A string member of an app's object: 1 copied; otherwise *why says what is wrong with it. */
 static int read_text(const char *json, size_t length, const char *key, char *out, size_t size, const char **why)
 {
@@ -176,6 +181,154 @@ static int read_lines(const char *json, size_t length, const char *key, char lin
     return count;
 }
 
+static int is_hex64(const char *text)
+{
+    if (strlen(text) != 64)
+        return 0;
+    for (const char *c = text; *c; ++c)
+        if (!((*c >= '0' && *c <= '9') || (*c >= 'a' && *c <= 'f')))
+            return 0;
+    return 1;
+}
+
+/* A number member that may be larger than 32 bits would hold (a file's size): 1 read. */
+static int read_u64(const char *json, size_t length, const char *key, uint64_t *out)
+{
+    const char *value = NULL;
+    size_t size = 0;
+    uint64_t result = 0;
+    if (update_check_json_value(json, length, key, &value, &size) != 1 || size == 0 || size > 19 ||
+        (size > 1 && value[0] == '0'))
+        return 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (value[i] < '0' || value[i] > '9')
+            return 0;
+        result = result * 10u + (uint64_t)(value[i] - '0');
+    }
+    *out = result;
+    return 1;
+}
+
+/* One pinned release ({"tag", "asset", "size", "sha256"}): 1 when it is one, and its file is the one the app's
+ * pattern names for its tag (a pin can't point at any other file). */
+static int read_pin(const char *json, size_t length, const CatalogApp *app, CatalogPin *pin)
+{
+    char expected[128];
+    memset(pin, 0, sizeof(*pin));
+    if (length == 0 || json[0] != '{' || update_check_json_string(json, length, "tag", pin->tag, sizeof(pin->tag)) != 1 ||
+        update_check_json_string(json, length, "asset", pin->asset, sizeof(pin->asset)) != 1 ||
+        update_check_json_string(json, length, "sha256", pin->sha256, sizeof(pin->sha256)) != 1 ||
+        !read_u64(json, length, "size", &pin->size))
+        return 0;
+    return is_hex64(pin->sha256) && pin->size > 0 && pin->size <= 0x80000000ull &&
+           github_release_asset_name(app->asset, pin->tag, expected, sizeof(expected)) &&
+           strcmp(expected, pin->asset) == 0;
+}
+
+/* The members 0.2.0 reads besides the required ones; each is optional, and one the catalog lists badly is left out
+ * with a log line while the app is kept. */
+static void read_extras(const char *json, size_t length, int index, const char *label, CatalogApp *app,
+                        catalog_log_fn log, void *user)
+{
+    const char *value = NULL;
+    size_t value_length = 0;
+    int found;
+    if ((found = update_check_json_string(json, length, "author", app->author, sizeof(app->author))) != 1)
+    {
+        app->author[0] = '\0';
+        if (found != 0)
+            say(log, user, "catalog: app %d (%s): its author is not text, or too long; left out", index, label);
+    }
+    if ((found = update_check_json_string(json, length, "data", app->data, sizeof(app->data))) == 1)
+    {
+        if (!catalog_data_folder_valid(app->data))
+        {
+            say(log, user, "catalog: app %d (%s): data \"%s\" is not a folder of its own in /data; left out", index,
+                label, app->data);
+            app->data[0] = '\0';
+        }
+    }
+    else
+    {
+        app->data[0] = '\0';
+        if (found != 0)
+            say(log, user, "catalog: app %d (%s): data is not text, or too long; left out", index, label);
+    }
+    if ((found = update_check_json_uint(json, length, "stars", &app->stars)) != 1)
+    {
+        app->stars = 0;
+        if (found != 0)
+            say(log, user, "catalog: app %d (%s): stars is not a number; left out", index, label);
+    }
+    if ((found = update_check_json_value(json, length, "tags", &value, &value_length)) == 1 && value_length > 0 &&
+        value[0] == '[')
+    {
+        size_t cursor = 0;
+        for (int i = 0;; ++i)
+        {
+            const char *item = NULL;
+            size_t item_length = 0;
+            char tag[64];
+            const int next = update_check_json_array_next(value, value_length, &cursor, &item, &item_length);
+            if (next <= 0)
+                break;
+            if (app->tag_count == CATALOG_MAX_TAGS)
+            {
+                say(log, user, "catalog: app %d (%s): more than %d tags; the rest are left out", index, label,
+                    CATALOG_MAX_TAGS);
+                break;
+            }
+            if (!element_text(item, item_length, tag, sizeof(tag)) || !tag[0] || strlen(tag) >= CATALOG_TAG ||
+                !id_valid(tag))
+            {
+                say(log, user, "catalog: app %d (%s): tag %d is not lowercase letters, digits and '-'; left out",
+                    index, label, i);
+                continue;
+            }
+            str_copy_tag(app->tags[app->tag_count++], tag);
+        }
+    }
+    else if (found != 0)
+        say(log, user, "catalog: app %d (%s): tags is not a list; left out", index, label);
+    /* The release the workflow pinned, then the ones before it. */
+    if ((found = update_check_json_value(json, length, "release", &value, &value_length)) == 1)
+    {
+        if (read_pin(value, value_length, app, &app->pins[0]))
+        {
+            app->pin_count = 1;
+            if (update_check_json_string(value, value_length, "published_at", app->published, sizeof(app->published)) !=
+                1)
+                app->published[0] = '\0';
+            if (update_check_json_string(value, value_length, "notes", app->notes, sizeof(app->notes)) != 1)
+                app->notes[0] = '\0';
+        }
+        else
+            say(log, user, "catalog: app %d (%s): its pinned release can't be read, or isn't its file; left out",
+                index, label);
+    }
+    else if (found != 0)
+        say(log, user, "catalog: app %d (%s): release can't be read; left out", index, label);
+    if (app->pin_count == 1 && update_check_json_value(json, length, "pins", &value, &value_length) == 1 &&
+        value_length > 0 && value[0] == '[')
+    {
+        size_t cursor = 0;
+        for (;;)
+        {
+            const char *item = NULL;
+            size_t item_length = 0;
+            const int next = update_check_json_array_next(value, value_length, &cursor, &item, &item_length);
+            if (next <= 0 || app->pin_count == CATALOG_MAX_PINS)
+                break;
+            if (read_pin(item, item_length, app, &app->pins[app->pin_count]) &&
+                strcmp(app->pins[app->pin_count].tag, app->pins[0].tag) != 0)
+                ++app->pin_count;
+            else
+                say(log, user, "catalog: app %d (%s): an older pin can't be read; left out", index, label);
+        }
+    }
+}
+
 /* One entry of apps into *app. 1 kept; 0 left out (with the reason in the log). */
 static int read_app(const char *json, size_t length, int index, const Catalog *kept, CatalogApp *app,
                     catalog_log_fn log, void *user)
@@ -251,7 +404,7 @@ static int read_app(const char *json, size_t length, int index, const Catalog *k
         why = "repo is not owner/name";
     else if (!github_release_asset_name(app->asset, "v1.0.0", example, sizeof(example)))
         why = "asset can't name a release's file";
-    else if (!name_valid(app->folder) || strcmp(app->folder, "..") == 0)
+    else if ((!name_valid(app->folder) || strcmp(app->folder, "..") == 0) && strcmp(app->folder, ".") != 0)
         why = "folder can't be a folder's name";
     else if (!name_valid(app->checksums))
         why = "checksums can't name a release's file";
@@ -270,9 +423,10 @@ static int read_app(const char *json, size_t length, int index, const Catalog *k
         say(log, user, "catalog: app %d (%s) left out: %s", index, label, why);
         return 0;
     }
+    read_extras(json, length, index, label, app, log, user);
     /* The install helper finds the app's folder in the ZIP whatever its name, and names the installed one after
      * the title ID, as Nightshade's apps are installed. */
-    if (strcmp(app->folder, app->title_id) != 0)
+    if (strcmp(app->folder, app->title_id) != 0 && strcmp(app->folder, ".") != 0)
         say(log, user, "catalog: app %d (%s): its folder %s is installed as %s, after its title ID", index, label,
             app->folder, app->title_id);
     return 1;
@@ -326,4 +480,72 @@ int catalog_parse(const char *json, size_t length, Catalog *out, catalog_log_fn 
     out->tip_count = read_lines(json, length, "tips", out->tips, CATALOG_MAX_LINES, log, user);
     out->egg_count = read_lines(json, length, "eggs", out->eggs, CATALOG_MAX_LINES, log, user);
     return out->app_count;
+}
+
+int catalog_has_tag(const CatalogApp *app, const char *tag)
+{
+    for (int i = 0; i < app->tag_count; ++i)
+        if (strcmp(app->tags[i], tag) == 0)
+            return 1;
+    return 0;
+}
+
+int catalog_data_folder_valid(const char *path)
+{
+    static const char *const kept[] = {"homebrew", "etahen", "solanum", "self-update", "system", "shadowmountplus",
+                                       "shadowmount", "payloads", "lapy", "user", "app", "apps", "savedata", "pkg",
+                                       "games", "tmp", "temp", "data", "mnt", "usb", "ext", "ftp", "elfldr",
+                                       "ps5_autoloader", "itemzflow", "prosperostore", "sandbox"};
+    char lower[72];
+    size_t length;
+    if (path == NULL || strncmp(path, "/data/", 6) != 0)
+        return 0;
+    length = strlen(path + 6);
+    if (length == 0 || length + 6 > 70 || path[6] == '.')
+        return 0;
+    for (size_t i = 0; i < length; ++i)
+    {
+        const char c = path[6 + i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' ||
+              c == '-'))
+            return 0;
+        lower[i] = (char)(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+    }
+    lower[length] = '\0';
+    for (size_t i = 0; i < sizeof(kept) / sizeof(kept[0]); ++i)
+        if (strcmp(lower, kept[i]) == 0)
+            return 0;
+    return 1;
+}
+
+int catalog_merge(Catalog *into, const Catalog *custom, int source, int *hidden)
+{
+    int added = 0, left = 0;
+    for (int i = 0; i < custom->app_count; ++i)
+    {
+        const CatalogApp *app = &custom->apps[i];
+        int known = 0;
+        for (int k = 0; k < into->app_count && !known; ++k)
+            known = strcmp(into->apps[k].id, app->id) == 0 || strcmp(into->apps[k].title_id, app->title_id) == 0;
+        if (known || into->app_count == CATALOG_MAX_APPS)
+        {
+            ++left;
+            continue;
+        }
+        CatalogApp *copy = &into->apps[into->app_count++];
+        *copy = *app;
+        copy->source = source;
+        /* Third-party: nothing it says is taken on its word. */
+        copy->family = false;
+        copy->attested = false;
+        copy->data[0] = '\0';
+        copy->stars = 0;
+        copy->pin_count = 0;
+        copy->published[0] = '\0';
+        copy->notes[0] = '\0';
+        ++added;
+    }
+    if (hidden)
+        *hidden = left;
+    return added;
 }

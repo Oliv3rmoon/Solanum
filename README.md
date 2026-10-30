@@ -5,7 +5,7 @@
 <h1 align="center">Solanum</h1>
 
 <p align="center">
-  <strong>Solanum, a Nightshade app: a store for open-source PS5 homebrew, by Oliv3rmoon. It installs and updates the apps of an open catalog from their own GitHub releases, each checked against its checksums, in Nightshade's black and red.</strong>
+  <strong>Solanum, a Nightshade app: a store for open-source PS5 homebrew, by Oliv3rmoon. It installs, updates, rolls back and uninstalls the apps of an open catalog from their own GitHub releases, each checked against the SHA-256 the catalog pinned, in Nightshade's black and red.</strong>
 </p>
 
 <p align="center">
@@ -16,33 +16,49 @@
 </p>
 
 Solanum, a Nightshade app named after the genus at the heart of the nightshade family, is a PS5 homebrew
-store. It lists the apps of the open catalog at
+store. It lists the 56 apps of the open catalog at
 [Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog), installs and updates each one
-from its own GitHub releases after checking the download against the release's checksum file, shows what
-changed before an update, and opens what it installed. Its installs are those of
+from its own GitHub releases after checking the download against the SHA-256 the catalog pinned for it, shows what
+changed before an update, rolls back, installs older versions, uninstalls, and opens what it installed. Its installs
+are those of
 [Nightshade](https://github.com/Oliv3rmoon/Nightshade)'s Settings > Apps, and it is built on
 [Dulcamara](https://github.com/Oliv3rmoon/Dulcamara)'s frontend, which is
-[Mandrake](https://github.com/Oliv3rmoon/Mandrake)'s. The current version is **0.1.0**; what changed is in the
+[Mandrake](https://github.com/Oliv3rmoon/Mandrake)'s. The current version is **0.2.0**; what changed is in the
 [changelog](docs/CHANGELOG.md).
 
 ## What you get
 
-- **The catalog's apps.** Browse them by category, the Nightshade family first, or search by name. Each has a
-  page with what it does, its license, an **attested** badge when its builds are attested by its own CI, its
-  newest version and when it came out, and the release's notes.
-- **Install, update, open.** Install puts an app in `/data/homebrew/<title ID>` beside Solanum; Update replaces
-  an older version's files and keeps your own; Open closes Solanum and starts the app.
-- **Checked before anything is unpacked.** Every download is checked against the SHA-256 its release's
-  checksum file (usually `SHA256SUMS`) gives it, as it arrives and again before it is unpacked. One that
-  doesn't match is never unpacked, and Solanum says so.
-- **Downloads that pick up where they stopped.** An install cut off by the network goes on from where it
-  stopped the next time.
-- **Updates.** One tab lists every installed app with a newer release, with its changelog beside it.
-- **Installed.** Where each app lives and how much room it takes.
-- **Open source only.** The catalog lists open-source homebrew, each linking its source and its license.
-  Solanum never offers game files, has no "add any URL", and downloads only the catalog's apps' own
-  releases.
-- **Nothing to pay for.** No ads, no account, no tracking. Free software under the GPL.
+- **The catalog's apps.** 56 open-source apps: media players and clients for your own servers, emulators, engine
+  ports that need your own game files, games with their own assets, and tools. Browse them by category (the
+  Nightshade family first) or search them by name, author or tag (`#emulator`, `#ps1`). Each has a page with what it
+  does, its author, its stars on GitHub, its tags, its license, an **attested** badge when its builds are attested
+  by its own CI, its newest version, when it came out and its notes, and a QR code to its source.
+- **Every release pinned.** The catalog's workflow downloads each app's newest release, checks it, and records its
+  SHA-256, size and content version. Solanum checks every download against that pin, and against the release's
+  checksum file or GitHub's digest when there is one, as it arrives and again before it is unpacked; one that
+  doesn't match is never unpacked. A release with no checksum file installs too.
+- **Install, update, open.** Install puts an app in `/data/homebrew/<title ID>` beside Solanum, or on an extended
+  drive or a USB drive (Install on, or Settings); Update replaces an older version's files and keeps your own; Open
+  closes Solanum and starts the app.
+- **More, on an app's page:** **Versions** installs any of its releases, an older one too; **Roll back** puts the
+  version before back in one press, from the ZIP Solanum kept, without downloading it; **Skip** an update, or
+  **Hold** an app's updates; **Uninstall** removes its folder and its home-screen entry, and its data folder when
+  you tick it.
+- **Updates.** One tab lists every installed app with a newer release, with its changelog beside it, and **Update
+  all**. Switch on *Update apps by themselves* (Settings > Store) and they update after each refresh, except the
+  ones you hold or skipped.
+- **Downloads.** Installs, updates and uninstalls wait in a queue and run up to three at once; an install cut off by
+  the network goes on from where it stopped the next time.
+- **Installed.** Where each app lives and how much room it takes, each drive's free room, and what Solanum keeps.
+  Apps you installed by hand, anywhere ShadowMountPlus scans, are found and looked after from then on.
+- **Custom catalogs.** Add another catalog (a GitHub `owner/name` or an HTTPS `catalog.json`) in Settings >
+  Catalogs. Its apps are marked third-party, never attested, ask before they install, and are checked against
+  GitHub alone.
+- **Ten languages:** English, French, Portuguese, Spanish, Japanese, German, Dutch, Turkish, Italian and Polish. And
+  a USB keyboard works as well as the controller.
+- **Open source only.** The catalog lists open-source homebrew with no game files, each linking its source and its
+  license. Solanum never offers game files, and downloads only the apps' own GitHub releases.
+- **Nothing to pay for.** No ads, no account, no tracking, no server of its own. Free software under the GPL.
 
 ## Install
 
@@ -65,14 +81,18 @@ carries; see Mandrake's README,
 
 | Button | |
 | --- | --- |
-| L1 / R1 | The tabs: Browse, Updates, Installed, About |
+| L1 / R1 | The tabs: Browse, Updates, Installed, Downloads, About |
 | D-pad, left stick | Move |
-| Cross | Open an app's page; on the page, Install, Update or Open |
+| Cross | Open an app's page; on the page, Install, Update, Open or More |
+| Triangle | Search (Browse); More (an app's page); Update all (Updates); Clear the cache (Installed) |
 | Circle | Back; during an install, cancel it (until its files are being put in place) |
-| Triangle | Search (Browse) |
-| Square | Ask for the catalog and the newest releases again |
+| Square | Ask for the catalogs and the newest releases again |
 | L2 / R2, right stick | Scroll the release notes |
-| OPTIONS | Settings: the interface sounds, Solanum's own updates, closing it |
+| OPTIONS | Settings: language, sounds, where new apps go, installs at once, keeping versions, automatic updates, custom catalogs, Solanum's own updates, closing it |
+
+On the search keyboard, L1 switches capitals. A **USB keyboard** works too: the arrows move, Enter chooses, Escape
+or Backspace goes back, Tab and Shift+Tab change tab, `/` searches, F5 refreshes, F10 opens Settings, and typing
+types (in Browse, typing starts a search).
 
 A new app appears on the home screen once the homebrew loader has looked again (ShadowMountPlus's next scan, or
 a restart). Until then Open says so; afterwards Open works from Solanum and the home screen alike.
@@ -81,31 +101,53 @@ a restart). Until then Open says so; afterwards Open works from Solanum and the 
 
 It is Nightshade's Settings > Apps, for every app of the catalog:
 
-1. Solanum reads `catalog.json` from Solanum-Catalog (and keeps a copy, so it opens offline too), then asks
-   `api.github.com` for each app's newest release: one request an app, of the 60 an hour GitHub allows an
-   address. Drafts and pre-releases never count.
-2. The release must have the file the catalog names (`{version}` in its name is the tag without a leading `v`)
-   and its SHA-256: the line the checksum file has for it, or else GitHub's own digest of the file. When both
-   are there they must agree; with neither, nothing is offered. The download's address is made from the
-   repository, the tag and the name, never taken from anywhere else.
+1. Solanum reads `catalog.json` from Solanum-Catalog (and keeps a copy, so it opens offline too), with each app's
+   newest release as the catalog's workflow pinned it: its tag, file, size, SHA-256 and content version. It shows
+   them all without asking GitHub's API, and asks it (one request an app, of the 60 an hour GitHub allows an address)
+   only for the apps installed on the console, for a release newer than the pin. Drafts and pre-releases never
+   count.
+2. A release's file is checked against its pin, and against the line the release's checksum file has for it and
+   GitHub's own digest of the file when there are; all must agree. A release newer than the pin installs only with a
+   checksum file or a digest; a file that changed after it was pinned never installs. The download's address is made
+   from the repository, the tag and the name, never taken from anywhere else.
 3. Install sends `self-updater.elf` (the boilerplate's self-update helper, with Nightshade's "install") from
    Solanum's folder to the payload loader. Solanum downloads the ZIP from GitHub, checks it as it arrives and
    hands it to the helper, which checks it again, unpacks the app's folder (the one holding `eboot.bin` and
    `sce_sys/param.json`) and checks that it is the title and version asked for. Only then does it put the folder
-   beside Solanum's, or, for an update, put the new files in place of the old ones (keeping the version it
-   replaced in `/data/solanum/previous-version/` until the next update). Anything that doesn't match is
-   refused, and nothing is changed.
-4. Open sends `app-launch.elf` to the payload loader; Solanum closes, and the payload opens the app.
+   beside Solanum's or in the folder chosen for it (`<drive>/homebrew`, made when it isn't there yet), or, for an
+   update, put the new files in place of the old ones (keeping the files it replaced in
+   `/data/solanum/previous-version/` until the next update). Anything that doesn't match is refused, and nothing is
+   changed.
+4. The ZIP it installed is kept in `/data/solanum/cache/keep/<title ID>/` with the one before it, so Roll back hands
+   the one before to the helper again, checked the same way, without the network.
+5. Uninstall asks the helper to remove the app's one installed folder (never the running app, never an image, never
+   a folder that holds other apps), to take the title off the home screen through the console's app-install
+   service, and, when you tick it, to remove the data folder the catalog names for it (one folder of its own directly
+   in `/data`).
+6. Open sends `app-launch.elf` to the payload loader; Solanum closes, and the payload opens the app.
 
 Each download is kept in `/data/solanum/cache/` while it arrives, so a cut-off one goes on with an HTTP range
-next time; a copy that doesn't match its checksum is deleted, never resumed. The logs are in
-`/data/solanum/logs/` (`solanum.log`, `updater.log`, `app-launch.log`).
+next time; a copy that doesn't match its checksum is deleted, never resumed. Your decisions (holds, skipped
+releases, how each app came to be installed) are in `/data/solanum/apps.ini`, custom catalogs in
+`/data/solanum/catalogs.ini`. The logs are in `/data/solanum/logs/` (`solanum.log`, `updater.log`,
+`app-launch.log`).
 
 ## Add an app to the catalog
 
 Open a pull request on [Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog): one entry in
-`catalog.json`'s `apps`, as its README says. Open-source homebrew only, released on GitHub with a checksum file.
-Solanum shows it once the pull request is in.
+`catalog.json`'s `apps`, as its README says. Open-source homebrew only, with an OSI license and a GitHub release
+whose ZIP holds the app's folder; a checksum file is welcome but no longer needed, since the catalog's workflow
+pins every release. Solanum shows it once the pull request is in.
+
+## Custom catalogs
+
+Settings > Catalogs > Add a catalog takes a GitHub repository (`owner/name`, or its page's address), whose
+`catalog.json` at the root is read from raw.githubusercontent.com, or the HTTPS address of any `catalog.json` in
+Solanum-Catalog's format; eight at most. Their apps come after Solanum's, each in a section named after its catalog,
+and are third-party always: marked so, never attested or in the Nightshade family, no data folder to remove, a
+question before each one's first install, and an app that Solanum's catalog lists too is shown from Solanum's. Their
+downloads still come only from the apps' own GitHub releases, checked against what GitHub says (the release's
+checksum file or GitHub's digest), never against what the custom catalog says.
 
 ## Updates
 
@@ -145,20 +187,24 @@ python3 tools/make_release.py   # optional: build, and pack PPSA76526.zip as a r
 The host checks need no PS5 SDK, only a C and C++ compiler:
 
 ```bash
-make host-checks   # the store (tests/store_check.c, on the live catalog and the apps' real releases in
-                   # tests/fixtures), the install helper's whole conversation (tests/helper_check.cpp),
-                   # and Solanum's own update (tests/update_release_check.c)
+make host-checks   # the store (tests/store_check.c, on the live catalog, the pinned one and the apps' real
+                   # releases in tests/fixtures), the install helper's whole conversation with installs on any
+                   # drive and uninstalls (tests/helper_check.cpp), Solanum's own update
+                   # (tests/update_release_check.c), and the translations (tests/test_i18n.py)
 make desktop       # the app in a window on this computer (SDL2), its store answering from tests/fixtures
 ```
 
 | Path | What |
 |---|---|
 | `src/main.c` | start-up, the main loop, notices, what the screens share |
-| `src/catalog.c` | reading `catalog.json`; bad entries are left out with a log line |
-| `src/apps.c` | where an app is, what a release offers, the launch conversation, the Konami code, tips |
-| `src/store.c` | the store's thread, installs and Open (Nightshade's Settings > Apps) |
+| `src/catalog.c` | reading `catalog.json` (with its pins, tags and data folders) and merging custom catalogs; bad entries are left out with a log line |
+| `src/apps.c` | where an app is, what a release offers (checked against the catalog's pins), the launch conversation, search, the Konami code, tips |
+| `src/store.c` | the store's thread, the job queue (installs, updates, versions, roll backs, uninstalls), Versions, storage, Open |
 | `src/resume.c` | downloads that go on where they stopped |
-| `src/ui/` | Browse, Updates, Installed, About, the app pages, the search keyboard, Settings |
+| `src/keep.c`, `src/prefs.c`, `src/custom.c` | the kept ZIPs for Roll back, the player's holds and skips, the custom catalogs |
+| `src/i18n.c`, `i18n/` | the ten languages (`tools/i18n.py` writes `src/i18n_table.inc` from `i18n/<language>.json`) |
+| `src/ui/` | Browse, Updates, Installed, Downloads, About, the app pages and their menus, the keyboard, Settings |
+| `src/platform/keys.c` | the USB keyboard |
 | `kit/` | the self-update kit: Nightshade's copy of the boilerplate's (see `kit/README.md`) |
 | `helper/` | the install helper and the launch payload, Nightshade's |
 | `src/platform/` | Mandrake's PS5 platform layer and Vulkan screen |

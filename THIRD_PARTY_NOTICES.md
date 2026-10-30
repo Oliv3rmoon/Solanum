@@ -125,6 +125,13 @@ and their host tests link it too, and the app folder carries its licence as `lic
 helper's archive validation and file helpers are original BlackBearReloaded
 code (GPL-3.0-or-later), taken from the ProsperoStore project.
 
+## Vendored QR Code generator
+
+`third_party/qrcodegen/` holds Project Nayuki's [QR Code generator](https://github.com/nayuki/QR-Code-generator)
+library for C, version 1.8.0 (`qrcodegen.c`, `qrcodegen.h`), MIT, unmodified, with its licence as `LICENSE`.
+Solanum compiles it into `src/vendor.c` to draw the QR code to an app's source on its page, and the app folder
+carries its licence as `licenses/LICENSE-qrcodegen.txt`.
+
 ## Optional UFS2Tool dependency
 
 When `.ffpkg` output is requested, the platform bootstrapper fetches
@@ -178,10 +185,10 @@ The frontend is Dulcamara's, which is Mandrake's (formerly Nightshade Station), 
 | Component | Use | License |
 | --- | --- | --- |
 | [stb_image, stb_truetype](https://github.com/nothings/stb) | picture decoding, font rendering (`third_party/stb`) | Public domain / MIT |
-| [Inter](https://github.com/rsms/inter) | interface font (`assets/fonts`) | SIL Open Font License 1.1 (`assets/fonts/OFL.txt`) |
+| [Inter](https://github.com/rsms/inter) 4.001 | interface font (`assets/fonts`; Solanum's subset, cut at weights 400 and 600 from the variable font, carries Latin-1 and Latin Extended-A) | SIL Open Font License 1.1 (`assets/fonts/OFL.txt`) |
 | [SDL2](https://www.libsdl.org/) (PacBrew port) | events, controllers, audio, software renderer | zlib |
 | [dlmalloc](https://gee.cs.oswego.edu/dl/html/malloc.html) 2.8.6 by Doug Lea | allocator for the direct-memory heap (`third_party/dlmalloc`) | Public domain (CC0) |
-| [Noto Sans JP](https://github.com/notofonts/noto-cjk) (subset made for Mandrake) | Japanese text (`assets/fonts/NotoSansJP-subset.ttf`) | SIL Open Font License 1.1 (`assets/fonts/OFL-NotoSansJP.txt`) |
+| [Noto Sans JP](https://github.com/notofonts/noto-cjk) 2.004 (subset made for Mandrake; Solanum's adds its Japanese translation's characters and common signs and arrows) | Japanese text (`assets/fonts/NotoSansJP-subset.ttf`) | SIL Open Font License 1.1 (`assets/fonts/OFL-NotoSansJP.txt`) |
 | [Tabler Icons](https://tabler.io/icons) 3.31.0 (subset by `tools/make_icon_font.py`) | interface icons (`assets/fonts/tabler-icons-subset.ttf`) | MIT (`assets/fonts/LICENSE-tabler-icons.txt`) |
 | [lcd3x](https://github.com/libretro/slang-shaders) by Gigaherz | the LCD3x shader, ported to GLSL in `src/platform/vk/shaders/lcd3x.frag` | Public domain |
 | [crt-royale](https://github.com/libretro/slang-shaders) (crt-royale-fast) by TroggleMonkey, adapted by Hyllian | the CRT Royale Fast shader, compiled to SPIR-V by `tools/make-royale.py` (`third_party/crt-royale`) | GPL-2.0-or-later (`third_party/crt-royale/LICENSE.TXT`) |

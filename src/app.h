@@ -26,6 +26,7 @@ enum Tab
     TAB_BROWSE,
     TAB_UPDATES,
     TAB_INSTALLED,
+    TAB_DOWNLOADS,
     TAB_ABOUT,
     TAB_COUNT
 };
@@ -33,11 +34,18 @@ enum Tab
 enum Request
 {
     REQUEST_NONE,
-    REQUEST_INSTALL, /* app.request_app */
-    REQUEST_OPEN,    /* app.request_app */
-    REQUEST_REFRESH, /* the catalog and the releases again */
-    REQUEST_CANCEL,  /* the install */
+    REQUEST_INSTALL,     /* app.request_app, in app.request_text (a place, "" beside Solanum) */
+    REQUEST_OPEN,        /* app.request_app */
+    REQUEST_REFRESH,     /* the catalog and the releases again */
+    REQUEST_CANCEL,      /* the job app.request_arg */
+    REQUEST_VERSION,     /* app.request_app's release app.request_arg of Versions */
+    REQUEST_ROLLBACK,    /* app.request_app's version before */
+    REQUEST_UNINSTALL,   /* app.request_app; app.request_arg 1: its data folder too */
+    REQUEST_UPDATE_ALL,  /* every update the player wants */
+    REQUEST_CLEAR_CACHE, /* the kept ZIPs and unfinished downloads */
 };
+
+#define APP_HISTORY 8
 
 typedef struct
 {
@@ -46,7 +54,8 @@ typedef struct
     enum Screen screen;
     int tab;                 /* enum Tab */
     int page_app;            /* the app page's catalog index */
-    StoreJob job;            /* the install, as it was at the start of the frame */
+    StoreJob history[APP_HISTORY]; /* the jobs that ended, the newest first, for Downloads */
+    int history_count;
     char storage_error[256]; /* the data folder can't be written */
     bool sandboxed;          /* /data can't be listed */
     char sandbox_reason[200];
@@ -56,6 +65,8 @@ typedef struct
     uint64_t quit_at;        /* opening an app: Solanum closes then (plat_ticks_us), 0 otherwise */
     int request;             /* enum Request, for the main loop */
     int request_app;
+    int request_arg;
+    char request_text[64];
     uint32_t random;         /* apps_pick's generator */
     int tip;                 /* the catalog's tip shown now, -1 none */
     int last_egg;
@@ -74,6 +85,12 @@ void app_open_settings(void);
 /* The settings changed what the sounds use: applied now. */
 void app_apply_settings(void);
 void app_request(int request, int app_index);
+void app_request_with(int request, int app_index, int arg, const char *text);
+/* The job of an app, waiting or running (store_job_of); false: none. */
+bool app_job(int index, StoreJob *out);
+/* Whether a third-party app's install has been agreed to this time (page.c asks once an app). */
+bool app_third_party_agreed(const char *title);
+void app_third_party_agree(const char *title);
 
 /* The bottom hint bar: pairs of (PadGlyph, label), then an optional right-hand text. */
 void app_draw_hints(const int *glyphs, const char *const *labels, int count, const char *right);

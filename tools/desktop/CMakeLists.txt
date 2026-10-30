@@ -12,7 +12,8 @@ find_package(SDL2 CONFIG REQUIRED)
 option(NP_PREVIEW "Draw off screen and follow NP_SCRIPT" OFF)
 
 file(GLOB SOURCES "${ROOT}/src/*.c" "${ROOT}/src/ui/*.c")
-list(APPEND SOURCES "${ROOT}/src/platform/plat_sdl.c" "${ROOT}/src/platform/xbr.c" "${ROOT}/src/platform/blit.c"
+list(APPEND SOURCES "${ROOT}/src/platform/plat_sdl.c" "${ROOT}/src/platform/keys.c" "${ROOT}/src/platform/xbr.c"
+    "${ROOT}/src/platform/blit.c"
     "${ROOT}/src/platform/vk/vk_probe.c")
 add_executable(solanum ${SOURCES})
 target_include_directories(solanum PRIVATE "${ROOT}/src" "${ROOT}/third_party/stb" "${ROOT}/kit")

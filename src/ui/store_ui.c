@@ -9,10 +9,12 @@
 #include "../app.h"
 #include "../i18n.h"
 #include "../platform/platform.h"
+#include "../custom.h"
 #include "../update.h"
 #include "draw.h"
 #include "icons.h"
 #include "keyboard.h"
+#include "overlay.h"
 #include "sfx.h"
 #include "text.h"
 #include "theme.h"
@@ -25,6 +27,11 @@
 #define LIST_X (TH_MARGIN + 40)
 #define CONTENT_Y 236.0f
 #define STRIP_Y 944.0f /* the loading strip, above the hints */
+
+enum
+{
+    ASK_CLEAR = 200
+};
 
 /* ---------------------------------------------------------------- shared pieces */
 
@@ -75,12 +82,17 @@ const char *app_status(int index, uint32_t *argb)
 {
     static char text[96];
     const StoreApp *s = store_app(index);
+    StoreJob job;
     *argb = TH_TEXT_DIM;
-    if (app.job.app == index && app.job.phase != JOB_IDLE && app.job.phase < JOB_INSTALLED)
+    if (app_job(index, &job))
     {
         *argb = TH_FOCUS;
-        if (app.job.phase == JOB_DOWNLOADING && app.job.total)
-            snprintf(text, sizeof(text), tr("Downloading %d%%"), (int)(app.job.done * 100 / app.job.total));
+        if (job.phase == JOB_QUEUED)
+            snprintf(text, sizeof(text), "%s", tr("In the queue"));
+        else if (job.kind == JOB_REMOVE)
+            snprintf(text, sizeof(text), "%s", tr("Uninstalling..."));
+        else if (job.phase == JOB_DOWNLOADING && job.total)
+            snprintf(text, sizeof(text), tr("Downloading %d%%"), (int)(job.done * 100 / job.total));
         else
             snprintf(text, sizeof(text), "%s", tr("Installing..."));
         return text;
@@ -91,7 +103,12 @@ const char *app_status(int index, uint32_t *argb)
     {
         if (s->installed.image)
             return tr("Installed (image)");
-        if (s->checked && s->offer == OFFER_UPDATE)
+        if (s->checked && s->offer == OFFER_UPDATE && s->hold)
+        {
+            *argb = TH_GOLD;
+            return tr("Updates held");
+        }
+        if (store_update_wanted(index))
         {
             *argb = TH_FOCUS;
             snprintf(text, sizeof(text), tr("Update to %s"), s->release.tag);
@@ -135,8 +152,9 @@ static void draw_header(void)
                   tr("A newer Solanum is installed: restart Solanum to use it"));
 }
 
-static const char *const TAB_NAMES[TAB_COUNT] = {"Browse", "Updates", "Installed", "About"};
-static const int TAB_ICONS[TAB_COUNT] = {ICON_LAYOUT_GRID, ICON_DOWNLOAD, ICON_FOLDER, ICON_INFO_CIRCLE};
+static const char *const TAB_NAMES[TAB_COUNT] = {"Browse", "Updates", "Installed", "Downloads", "About"};
+static const int TAB_ICONS[TAB_COUNT] = {ICON_LAYOUT_GRID, ICON_REFRESH, ICON_FOLDER, ICON_DOWNLOAD,
+                                         ICON_INFO_CIRCLE};
 
 static void draw_tabs(void)
 {
@@ -147,7 +165,10 @@ static void draw_tabs(void)
     for (int i = 0; i < TAB_COUNT; ++i)
     {
         char name[48];
-        const int updates = i == TAB_UPDATES ? store_update_count() : 0;
+        StoreJob jobs[STORE_JOBS];
+        const int updates = i == TAB_UPDATES      ? store_update_count()
+                            : i == TAB_DOWNLOADS ? (store_busy() ? store_jobs(jobs, STORE_JOBS) : 0)
+                                                 : 0;
         if (updates)
             snprintf(name, sizeof(name), "%s  %d", tr(TAB_NAMES[i]), updates);
         else
@@ -172,8 +193,8 @@ static void draw_strip(void)
         what = tr("Updating the catalog...");
     else if (store_checking())
         what = tr("Asking GitHub for the newest releases...");
-    else if (app.job.app >= 0 && app.job.phase != JOB_IDLE && app.job.phase < JOB_INSTALLED)
-        what = tr("Installing...");
+    else if (store_busy())
+        what = tr("Working through the queue (Downloads)...");
     if (!what)
         return;
     const float x = LIST_X, y = STRIP_Y, w = plat_width() - 2 * LIST_X;
@@ -211,7 +232,17 @@ static void draw_app_row(int index, float x, float y, float w, float h, bool foc
         bx += 30;
         text_draw(bx, y + 20, 20, FONT_REGULAR, TH_GOOD, ALIGN_LEFT, tr("attested"));
     }
+    else if (a->source > 0 && bx + 160 < tx + room)
+        text_draw(bx, y + 20, 20, FONT_REGULAR, TH_GOLD, ALIGN_LEFT, tr("third-party"));
     text_draw_fit(tx, y + 56, 23, FONT_REGULAR, TH_TEXT_DIM, ALIGN_LEFT, room, a->summary);
+    if (a->stars)
+    {
+        char stars[16];
+        snprintf(stars, sizeof(stars), "%u", a->stars);
+        const float sw = text_width(20, FONT_REGULAR, stars);
+        icon_draw(ICON_STAR, x + w - 64 - sw, y + h - 46, 20, TH_TEXT_DIM);
+        text_draw(x + w - 28, y + h - 46, 20, FONT_REGULAR, TH_TEXT_DIM, ALIGN_RIGHT, stars);
+    }
     if (status[0])
         text_draw(x + w - 28, y + (h - 10) * 0.5f - 14, 24, FONT_BOLD, status_argb, ALIGN_RIGHT, status);
 }
@@ -223,7 +254,8 @@ enum
     SECTION_SEARCH,
     SECTION_FAMILY,
     SECTION_ALL,
-    SECTION_CATEGORY
+    SECTION_CATEGORY,
+    SECTION_CUSTOM /* a custom catalog's apps (category: its number) */
 };
 
 typedef struct
@@ -239,32 +271,15 @@ static char query[64];
 static Konami konami;
 static int about_presses;
 
-static bool contains(const char *text, const char *wanted)
-{
-    const size_t n = strlen(wanted);
-    if (!n)
-        return true;
-    for (const char *t = text; *t; ++t)
-    {
-        size_t i = 0;
-        while (i < n && t[i] && tolower((unsigned char)t[i]) == tolower((unsigned char)wanted[i]))
-            ++i;
-        if (i == n)
-            return true;
-    }
-    return false;
-}
-
 static bool in_section(const CatalogApp *a, const Section *s)
 {
     switch (s->kind)
     {
-    case SECTION_SEARCH:
-        return contains(a->name, query) || contains(a->summary, query) || contains(a->id, query) ||
-               contains(catalog_category_title(a->category), query);
+    case SECTION_SEARCH: return apps_matches(a, query);
     case SECTION_FAMILY: return a->family;
     case SECTION_ALL: return true;
-    default: return a->category == s->category;
+    case SECTION_CUSTOM: return a->source == s->category;
+    default: return a->category == s->category && a->source == 0;
     }
 }
 
@@ -278,6 +293,13 @@ static int sections(Section *out)
         family += catalog->apps[i].family;
         ++by[catalog->apps[i].category];
     }
+    int sources[CUSTOM_MAX + 1] = {0};
+    for (int i = 0; i < catalog->app_count; ++i)
+        if (catalog->apps[i].source > 0 && catalog->apps[i].source <= CUSTOM_MAX)
+        {
+            ++sources[catalog->apps[i].source];
+            --by[catalog->apps[i].category];
+        }
     out[n++] = (Section){SECTION_SEARCH, -1, 0};
     if (family)
         out[n++] = (Section){SECTION_FAMILY, -1, family};
@@ -285,6 +307,9 @@ static int sections(Section *out)
     for (int c = 0; c < CATEGORY_COUNT; ++c)
         if (by[c])
             out[n++] = (Section){SECTION_CATEGORY, c, by[c]};
+    for (int c = 1; c <= CUSTOM_MAX; ++c)
+        if (sources[c])
+            out[n++] = (Section){SECTION_CUSTOM, c, sources[c]};
     for (int i = 0; i < n; ++i)
         if (out[i].kind == SECTION_SEARCH)
             for (int a = 0; a < catalog->app_count; ++a)
@@ -316,13 +341,14 @@ static void section_label(const Section *s, char *out, size_t size)
         break;
     case SECTION_FAMILY: snprintf(out, size, "%s", tr("Nightshade family")); break;
     case SECTION_ALL: snprintf(out, size, "%s", tr("All apps")); break;
+    case SECTION_CUSTOM: custom_name(s->category - 1, out, size); break;
     default: snprintf(out, size, "%s", tr(catalog_category_title(s->category))); break;
     }
 }
 
 static void browse(uint32_t pressed)
 {
-    Section list_sections[CATEGORY_COUNT + 3];
+    Section list_sections[CATEGORY_COUNT + 3 + CUSTOM_MAX];
     int list[CATALOG_MAX_APPS];
     const int count = sections(list_sections);
     if (section >= count)
@@ -342,7 +368,27 @@ static void browse(uint32_t pressed)
     if (row >= n)
         row = n ? n - 1 : 0;
 
-    if (pressed & BIT(BTN_TRIANGLE))
+    /* A USB keyboard's letters start a search with themselves. */
+    char typed[64];
+    const int typed_count = keyboard_active() ? 0 : plat_keyboard_text(typed, sizeof(typed));
+    bool letters = false;
+    for (int i = 0; i < typed_count; ++i)
+        letters = letters || (isalnum((unsigned char)typed[i]) || typed[i] == '#');
+    if (letters)
+    {
+        keyboard_open(query);
+        query[0] = '\0';
+        for (int i = 0, n = 0; i < typed_count && n + 1 < (int)sizeof(query); ++i)
+            if ((unsigned char)typed[i] >= 0x20 && (unsigned char)typed[i] < 0x7f)
+            {
+                query[n++] = typed[i];
+                query[n] = '\0';
+            }
+        section = 0;
+        in_apps = false;
+        pressed = 0;
+    }
+    else if (pressed & BIT(BTN_TRIANGLE))
     {
         keyboard_open(query);
         section = 0;
@@ -415,6 +461,7 @@ static void browse(uint32_t pressed)
         const int icon = s->kind == SECTION_SEARCH   ? ICON_SEARCH
                          : s->kind == SECTION_FAMILY ? ICON_HEART
                          : s->kind == SECTION_ALL    ? ICON_LIST_DETAILS
+                         : s->kind == SECTION_CUSTOM ? ICON_WORLD
                                                      : CATEGORY_ICONS[s->category];
         icon_draw(icon, sx + 22, y + 15, 28, on ? TH_FOCUS : TH_TEXT_DIM);
         section_label(s, label, sizeof(label));
@@ -435,7 +482,8 @@ static void browse(uint32_t pressed)
     {
         const char *empty = list_sections[section].kind == SECTION_SEARCH && query[0]
                                 ? tr("No app matches your search.")
-                                : list_sections[section].kind == SECTION_SEARCH ? tr("Press Cross to search.")
+                                : list_sections[section].kind == SECTION_SEARCH
+                                    ? tr("Press Cross to search by name, or by tag: #emulator, #media...")
                                                                                 : tr("Nothing here yet.");
         text_draw(ax + aw * 0.5f, CONTENT_Y + 180, 30, FONT_REGULAR, TH_TEXT_DIM, ALIGN_CENTER, empty);
     }
@@ -502,9 +550,18 @@ static void updates(uint32_t pressed)
 {
     const Catalog *catalog = store_catalog();
     int list[CATALOG_MAX_APPS], n = 0;
+    int held = 0;
     for (int i = 0; i < catalog->app_count; ++i)
-        if (store_app(i)->checked && store_app(i)->offer == OFFER_UPDATE)
+        if (store_update_wanted(i))
             list[n++] = i;
+        else if (store_app(i)->checked && store_app(i)->offer == OFFER_UPDATE)
+            ++held;
+    if ((pressed & BIT(BTN_TRIANGLE)) && n)
+    {
+        sfx_play(SFX_SELECT);
+        app_request(REQUEST_UPDATE_ALL, -1);
+        pressed &= ~BIT(BTN_TRIANGLE);
+    }
     if (updates_row >= n)
         updates_row = n ? n - 1 : 0;
     if ((pressed & (BIT(BTN_UP) | BIT(BTN_DOWN))) && n)
@@ -521,7 +578,7 @@ static void updates(uint32_t pressed)
     {
         /* the changelog was on screen beside it; the page shows the install as it goes */
         sfx_play(SFX_SELECT);
-        app_request(REQUEST_INSTALL, list[updates_row]);
+        app_request_with(REQUEST_INSTALL, list[updates_row], 0, "");
         page_open(list[updates_row]);
         return;
     }
@@ -539,6 +596,17 @@ static void updates(uint32_t pressed)
         const char *empty = store_checking() ? tr("Asking GitHub for the newest releases...")
                                              : tr("Every installed app is up to date.");
         text_draw(plat_width() * 0.5f, CONTENT_Y + 200, 32, FONT_REGULAR, TH_TEXT_DIM, ALIGN_CENTER, empty);
+        if (store_rate_limited())
+            text_draw(plat_width() * 0.5f, CONTENT_Y + 256, 24, FONT_REGULAR, TH_GOLD, ALIGN_CENTER,
+                      tr("GitHub's hourly limit was reached: the catalog's pins are shown. Refresh in a while."));
+    }
+    if (held)
+    {
+        char line[120];
+        snprintf(line, sizeof(line), held == 1 ? tr("1 update is held or skipped (an app's More)")
+                                               : tr("%d updates are held or skipped (an app's More)"),
+                 held);
+        text_draw(LIST_X, STRIP_Y - 40, 22, FONT_REGULAR, TH_TEXT_DIM, ALIGN_LEFT, line);
     }
     else
     {
@@ -548,9 +616,9 @@ static void updates(uint32_t pressed)
             draw_app_row(list[i], x, CONTENT_Y + (i - updates_top) * h, w, h, i == updates_row);
         draw_notes(list[updates_row], x + w + 56, CONTENT_Y - 16, plat_width() - LIST_X - (x + w + 56), 690);
     }
-    static const int glyphs[] = {GLYPH_CROSS, GLYPH_SQUARE, GLYPH_R2, GLYPH_START};
-    static const char *const labels[] = {"Update", "App page", "Scroll the notes", "Settings"};
-    app_draw_hints(glyphs, labels, n ? 4 : 0, n ? NULL : "");
+    static const int glyphs[] = {GLYPH_CROSS, GLYPH_TRIANGLE, GLYPH_SQUARE, GLYPH_R2, GLYPH_START};
+    static const char *const labels[] = {"Update", "Update all", "App page", "Scroll the notes", "Settings"};
+    app_draw_hints(glyphs, labels, n ? 5 : 0, n ? NULL : "");
 }
 
 static void installed(uint32_t pressed)
@@ -579,6 +647,42 @@ static void installed(uint32_t pressed)
         sfx_play(SFX_SELECT);
         page_open(list[installed_row]);
         return;
+    }
+    bool yes, ticked;
+    if (pressed & BIT(BTN_TRIANGLE))
+    {
+        sfx_play(SFX_SELECT);
+        confirm_open(ASK_CLEAR, tr("Clear the cache?"),
+                     tr("The ZIPs Solanum kept for Roll back, and downloads that didn't finish, are deleted. Installed "
+                        "apps stay as they are; Roll back is offered again after their next update."),
+                     tr("Clear"), NULL, false);
+    }
+    if (confirm_answered(ASK_CLEAR, &yes, &ticked) && yes)
+        app_request(REQUEST_CLEAR_CACHE, -1);
+
+    /* storage: each drive's free room, and what Solanum keeps (asked once a second at most) */
+    static StoreStorage storage;
+    static uint64_t asked_at;
+    if (plat_ticks_us() - asked_at > 1000000 || !asked_at)
+    {
+        asked_at = plat_ticks_us();
+        store_storage(&storage);
+    }
+    {
+        char line[600], kept[32], parts[32];
+        size_t used = 0;
+        line[0] = '\0';
+        for (int d = 0; d < storage.count; ++d)
+            used += (size_t)snprintf(line + used, sizeof(line) - used, tr("%s%s: %lld.%lld GB free"), d ? "   " : "",
+                                     storage.path[d], storage.free_mb[d] >> 10,
+                                     (storage.free_mb[d] & 1023) * 10 >> 10);
+        app_format_size(storage.kept, kept, sizeof(kept));
+        app_format_size(storage.parts, parts, sizeof(parts));
+        if (used < sizeof(line))
+            snprintf(line + used, sizeof(line) - used, tr("   ·   kept for Roll back: %s, unfinished: %s"), kept, parts);
+        icon_draw(ICON_DEVICE_FLOPPY, LIST_X, STRIP_Y - 44, 26, TH_TEXT_DIM);
+        text_draw_fit(LIST_X + 38, STRIP_Y - 42, 22, FONT_REGULAR, TH_TEXT_DIM, ALIGN_LEFT,
+                      plat_width() - 2 * LIST_X - 38, line);
     }
 
     const float x = LIST_X, w = plat_width() - 2 * LIST_X, h = 112;
@@ -619,15 +723,133 @@ static void installed(uint32_t pressed)
             else
                 snprintf(size, sizeof(size), "%s", s->installed.image ? tr("an image") : tr("size unknown"));
             text_draw(x + w - 28, y + 16, 24, FONT_BOLD, TH_TEXT_SOFT, ALIGN_RIGHT, size);
-            snprintf(where, sizeof(where), "%s %s", s->installed.image ? tr("Mounted from an image, registered in")
-                                                                       : tr("Lives in"),
-                     s->installed.folder);
+            snprintf(where, sizeof(where), "%s %s%s", s->installed.image ? tr("Mounted from an image, registered in")
+                                                                         : tr("Lives in"),
+                     s->installed.folder, s->by == BY_HAND ? tr("  ·  installed by hand, looked after by Solanum") : "");
             text_draw_fit(tx, y + 58, 22, FONT_MONO, TH_TEXT_DIM, ALIGN_LEFT, w - (tx - x) - 40, where);
         }
     }
-    static const int glyphs[] = {GLYPH_CROSS, GLYPH_SQUARE, GLYPH_START};
-    static const char *const labels[] = {"App page", "Refresh", "Settings"};
-    app_draw_hints(glyphs, labels, 3, NULL);
+    static const int glyphs[] = {GLYPH_CROSS, GLYPH_TRIANGLE, GLYPH_SQUARE, GLYPH_START};
+    static const char *const labels[] = {"App page", "Clear the cache", "Refresh", "Settings"};
+    app_draw_hints(glyphs, labels, 4, NULL);
+}
+
+/* ---------------------------------------------------------------- Downloads */
+
+static int downloads_row, downloads_top;
+
+static const char *job_phase_text(const StoreJob *job)
+{
+    switch (job->phase)
+    {
+    case JOB_QUEUED: return tr("In the queue");
+    case JOB_STARTING: return tr("Starting the install helper...");
+    case JOB_DOWNLOADING: return job->kind == JOB_ROLLBACK ? tr("Handing over the kept copy...") : tr("Downloading");
+    case JOB_UNPACKING: return tr("Unpacking");
+    case JOB_INSTALLING: return tr("Putting the files in place...");
+    case JOB_REMOVING: return tr("Uninstalling...");
+    case JOB_INSTALLED: return job->kind == JOB_REMOVE ? tr("Uninstalled") : tr("Done");
+    case JOB_CANCELLED: return tr("Cancelled");
+    case JOB_FAILED: return tr("Failed");
+    default: return "";
+    }
+}
+
+static const char *job_kind_text(int kind)
+{
+    switch (kind)
+    {
+    case JOB_INSTALL: return tr("Install");
+    case JOB_UPDATE: return tr("Update");
+    case JOB_VERSION: return tr("Version");
+    case JOB_ROLLBACK: return tr("Roll back");
+    case JOB_REMOVE: return tr("Uninstall");
+    default: return "";
+    }
+}
+
+static void downloads(uint32_t pressed)
+{
+    StoreJob list[STORE_JOBS + APP_HISTORY];
+    int n = store_jobs(list, STORE_JOBS);
+    const int live = n;
+    for (int i = 0; i < app.history_count && n < STORE_JOBS + APP_HISTORY; ++i)
+        list[n++] = app.history[i];
+    if (downloads_row >= n)
+        downloads_row = n ? n - 1 : 0;
+    if ((pressed & (BIT(BTN_UP) | BIT(BTN_DOWN))) && n)
+    {
+        const int to = downloads_row + (pressed & BIT(BTN_UP) ? -1 : 1);
+        if (to >= 0 && to < n)
+        {
+            downloads_row = to;
+            sfx_play(SFX_CLICK);
+        }
+    }
+    if ((pressed & BIT(BTN_CROSS)) && downloads_row < live &&
+        (list[downloads_row].phase < JOB_INSTALLING || list[downloads_row].phase == JOB_QUEUED) &&
+        list[downloads_row].kind != JOB_REMOVE)
+    {
+        sfx_play(SFX_BACK);
+        app_request_with(REQUEST_CANCEL, -1, list[downloads_row].id, "");
+    }
+    if ((pressed & BIT(BTN_TRIANGLE)) && n && list[downloads_row].app >= 0)
+    {
+        sfx_play(SFX_SELECT);
+        page_open(list[downloads_row].app);
+        return;
+    }
+    const float x = LIST_X, w = plat_width() - 2 * LIST_X, h = 104;
+    const int visible = 6;
+    if (n == 0)
+        text_draw(plat_width() * 0.5f, CONTENT_Y + 200, 32, FONT_REGULAR, TH_TEXT_DIM, ALIGN_CENTER,
+                  tr("Nothing in the queue. Installs, updates and uninstalls wait here, a few at once."));
+    else
+    {
+        downloads_top = list_top_row(downloads_top, downloads_row, visible, n);
+        draw_rrect(x - 16, CONTENT_Y - 16, w + 32, visible * h + 22, TH_RADIUS, TH_CARD_A(0xe6));
+        for (int i = downloads_top; i < n && i < downloads_top + visible; ++i)
+        {
+            const StoreJob *job = &list[i];
+            const float y = CONTENT_Y + (i - downloads_top) * h;
+            const bool on = i == downloads_row;
+            if (on)
+            {
+                draw_rrect(x, y, w, h - 10, TH_RADIUS_SMALL, TH_ROW_SELECTED);
+                draw_rect(x, y + 18, 5, h - 46, TH_FOCUS);
+            }
+            char title[160], right[160], done[32], total[32];
+            snprintf(title, sizeof(title), "%s  ·  %s%s%s", job->name[0] ? job->name : job->title,
+                     job_kind_text(job->kind), job->tag[0] ? " " : "", job->tag);
+            text_draw_fit(x + 28, y + 12, 28, FONT_BOLD, on ? TH_TEXT : TH_TEXT_SOFT, ALIGN_LEFT, w * 0.55f, title);
+            if (job->phase == JOB_DOWNLOADING && job->total)
+            {
+                app_format_size(job->done, done, sizeof(done));
+                app_format_size(job->total, total, sizeof(total));
+                snprintf(right, sizeof(right), "%s  ·  %s / %s%s%s", job_phase_text(job), done, total,
+                         job->time_left[0] ? "  ·  " : "", job->time_left);
+            }
+            else if (job->phase == JOB_FAILED)
+                snprintf(right, sizeof(right), "%s: %s", job_phase_text(job), tr(job->error));
+            else
+                snprintf(right, sizeof(right), "%s", job_phase_text(job));
+            const uint32_t ink = job->phase == JOB_FAILED      ? TH_DANGER
+                                 : job->phase == JOB_INSTALLED ? TH_GOOD
+                                 : i < live                    ? TH_FOCUS
+                                                               : TH_TEXT_DIM;
+            text_draw_fit(x + w - 28, y + 16, 23, FONT_REGULAR, ink, ALIGN_RIGHT, w * 0.42f, right);
+            if (i < live && job->phase != JOB_QUEUED)
+            {
+                const float fraction = job->total ? fminf((float)((double)job->done / (double)job->total), 1.0f)
+                                                  : job->phase >= JOB_INSTALLING ? 1.0f : 0.05f;
+                draw_rrect(x + 28, y + 62, w - 56, 12, 6, TH_PILL);
+                draw_rrect(x + 28, y + 62, fmaxf(12.0f, (w - 56) * fraction), 12, 6, TH_FOCUS);
+            }
+        }
+    }
+    static const int glyphs[] = {GLYPH_CROSS, GLYPH_TRIANGLE, GLYPH_START};
+    static const char *const labels[] = {"Cancel", "App page", "Settings"};
+    app_draw_hints(glyphs, labels, n ? 3 : 1, NULL);
 }
 
 /* ---------------------------------------------------------------- About */
@@ -655,13 +877,14 @@ static void about(uint32_t pressed)
              tr("a Nightshade app by Oliv3rmoon. Free software: GPL-3.0-or-later."));
     text_draw_fit(x + 28, y + 19, 28, FONT_BOLD, TH_TEXT, ALIGN_LEFT, w - 56, version);
     const char *lines[] = {
-        "Solanum installs and updates open-source PS5 homebrew from an open catalog, "
+        "Solanum installs, updates, rolls back and uninstalls open-source PS5 homebrew from an open catalog, "
         "github.com/Oliv3rmoon/Solanum-Catalog. Anyone can add an app there with a pull request.",
         catalog->about,
         "Open-source homebrew only: every app links its source and its license. Solanum never offers game files, "
         "and nothing it lists downloads them.",
-        "Every app comes from its own GitHub release and is checked against the release's checksum file before "
-        "anything is unpacked. New apps go beside Solanum (/data/homebrew/<title ID>).",
+        "Every app comes from its own GitHub release and is checked before anything is unpacked: against the "
+        "SHA-256 the catalog's workflow pinned when it downloaded the release, and the release's checksum file or "
+        "GitHub's digest. Custom catalogs are third-party, and checked against GitHub alone.",
         "Built on Dulcamara and Mandrake (formerly Nightshade Station): BlackBearReloaded's "
         "ps5-native-app-boilerplate. Installs with Nightshade's update helper, opens apps with its launch "
         "payload (after Mihawk's). Licenses: the app's licenses folder.",
@@ -762,7 +985,7 @@ void store_screen(uint32_t pressed)
         sfx_play(SFX_CLICK);
         pressed &= ~(BIT(BTN_L1) | BIT(BTN_R1));
     }
-    if ((pressed & BIT(BTN_SQUARE)) && app.tab != TAB_UPDATES && !keyboard_active())
+    if ((pressed & BIT(BTN_SQUARE)) && app.tab != TAB_UPDATES && app.tab != TAB_DOWNLOADS && !keyboard_active())
     {
         sfx_play(SFX_SELECT);
         app_request(REQUEST_REFRESH, -1);
@@ -776,6 +999,7 @@ void store_screen(uint32_t pressed)
     case TAB_BROWSE: browse(pressed); break;
     case TAB_UPDATES: updates(pressed); break;
     case TAB_INSTALLED: installed(pressed); break;
+    case TAB_DOWNLOADS: downloads(pressed); break;
     default: about(pressed); break;
     }
     if (!keyboard_active())

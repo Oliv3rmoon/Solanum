@@ -19,6 +19,7 @@
 #include "platform/vk/vk_probe.h"
 #include "ui/draw.h"
 #include "ui/icons.h"
+#include "ui/overlay.h"
 #include "ui/sfx.h"
 #include "ui/text.h"
 #include "ui/theme.h"
@@ -316,6 +317,14 @@ static uint32_t nav_pressed(const PadState *pads)
 void app_apply_settings(void)
 {
     sfx_configure(app.settings.ui_sound, (app.settings.ui_volume + 1) * 25);
+    store_set_parallel(app.settings.parallel);
+    store_set_keep(app.settings.keep_versions);
+    const int lang = app.settings.language >= 0 ? app.settings.language : plat_system_language();
+    if (lang != i18n_get())
+    {
+        i18n_set(lang);
+        text_language_changed();
+    }
 }
 
 void app_save_settings(void)
@@ -332,8 +341,38 @@ void app_open_settings(void)
 
 void app_request(int request, int index)
 {
+    app_request_with(request, index, 0, "");
+}
+
+void app_request_with(int request, int index, int arg, const char *text)
+{
     app.request = request;
     app.request_app = index;
+    app.request_arg = arg;
+    str_copy(app.request_text, sizeof(app.request_text), text ? text : "");
+}
+
+bool app_job(int index, StoreJob *out)
+{
+    return store_job_of(index, out);
+}
+
+/* The third-party apps the player agreed to install, this time Solanum runs. */
+static char agreed[32][10];
+static int agreed_count;
+
+bool app_third_party_agreed(const char *title)
+{
+    for (int i = 0; i < agreed_count; ++i)
+        if (strcmp(agreed[i], title) == 0)
+            return true;
+    return false;
+}
+
+void app_third_party_agree(const char *title)
+{
+    if (!app_third_party_agreed(title) && agreed_count < 32)
+        str_copy(agreed[agreed_count++], sizeof(agreed[0]), title);
 }
 
 /* ---------------------------------------------------------------- what the screens asked for */
@@ -346,12 +385,49 @@ static void carry_out(void)
     switch (request)
     {
     case REQUEST_INSTALL:
-        if (!store_install(index, reason, sizeof(reason)))
-            app_message_box(reason);
+        if (!store_install(index, app.request_text, reason, sizeof(reason)))
+            app_message_box(tr(reason));
         else
             app_next_tip();
         break;
-    case REQUEST_CANCEL: store_cancel(); break;
+    case REQUEST_VERSION:
+        if (!store_install_version(index, app.request_arg, reason, sizeof(reason)))
+            app_message_box(tr(reason));
+        break;
+    case REQUEST_ROLLBACK:
+        if (!store_rollback(index, reason, sizeof(reason)))
+            app_message_box(tr(reason));
+        break;
+    case REQUEST_UNINSTALL:
+        if (!store_uninstall(index, app.request_arg != 0, reason, sizeof(reason)))
+            app_message_box(tr(reason));
+        break;
+    case REQUEST_UPDATE_ALL:
+    {
+        int queued = 0;
+        store_lock();
+        int list[CATALOG_MAX_APPS], n = 0;
+        for (int i = 0; i < store_catalog()->app_count; ++i)
+            if (store_update_wanted(i))
+                list[n++] = i;
+        store_unlock();
+        for (int i = 0; i < n; ++i)
+            queued += store_install(list[i], "", reason, sizeof(reason));
+        snprintf(text, sizeof(text), queued == 1 ? tr("1 update is in the queue.") : tr("%d updates are in the queue."),
+                 queued);
+        app_toast(text);
+        break;
+    }
+    case REQUEST_CLEAR_CACHE:
+        if (store_busy())
+            app_toast(tr("Wait for the queue to finish first."));
+        else
+        {
+            store_clear_cache();
+            app_toast(tr("The kept versions and unfinished downloads are deleted."));
+        }
+        break;
+    case REQUEST_CANCEL: store_cancel(app.request_arg); break;
     case REQUEST_REFRESH:
         app_next_tip();
         store_refresh(true);
@@ -395,48 +471,103 @@ static void carry_out(void)
     }
 }
 
-/* The install that ended this frame: said once, then forgotten so the next can begin. */
+/* The jobs that ended since the last frame: each said once, and kept in Downloads' history. */
 static void job_ended(void)
 {
     char text[600];
-    const StoreJob *job = &app.job;
-    if (job->app < 0 || (job->phase != JOB_INSTALLED && job->phase != JOB_FAILED && job->phase != JOB_CANCELLED))
+    StoreJob ended;
+    while (store_job_ended(&ended))
+    {
+        const StoreJob *job = &ended;
+        memmove(app.history + 1, app.history, sizeof(app.history[0]) * (APP_HISTORY - 1));
+        app.history[0] = ended;
+        if (app.history_count < APP_HISTORY)
+            ++app.history_count;
+        const char *name = job->name[0] ? job->name : job->title;
+        if (job->phase == JOB_INSTALLED && job->kind == JOB_REMOVE)
+        {
+            if (job->home_screen)
+                snprintf(text, sizeof(text), tr("%s is uninstalled, and gone from the home screen."), name);
+            else
+                snprintf(text, sizeof(text),
+                         tr("%s is uninstalled. The home screen may show it until ShadowMountPlus looks again or the "
+                            "console restarts."),
+                         name);
+            app_toast_for(text, 5.0f);
+        }
+        else if (job->phase == JOB_INSTALLED)
+        {
+            if (job->fresh)
+                snprintf(text, sizeof(text),
+                         tr("%s %s is installed in %s. The homebrew loader lists it after its next scan or a restart."),
+                         name, job->version, job->folder[0] ? job->folder : tr("its folder"));
+            else if (job->kind == JOB_ROLLBACK)
+                snprintf(text, sizeof(text), tr("%s is back to %s."), name, job->version);
+            else
+                snprintf(text, sizeof(text), tr("%s is updated to %s."), name, job->version);
+            app_toast_for(text, 5.0f);
+        }
+        else if (job->phase == JOB_CANCELLED)
+            app_toast(job->kind == JOB_REMOVE ? tr("The uninstall was cancelled. Nothing was changed.")
+                                              : tr("The install was cancelled. Nothing was changed."));
+        else if (job->mismatch)
+        {
+            snprintf(text, sizeof(text),
+                     tr("%s wasn't installed: the download doesn't match its release's checksum, so nothing was "
+                        "unpacked and nothing was changed. Try again; if it happens again, tell the app's author."),
+                     name);
+            app_message_box(text);
+        }
+        else if (job->no_loader)
+            app_message_box(tr("No payload loader took Solanum's install helper. Is the HEN's ELF loader (port 9021) "
+                               "running? Nothing was changed."));
+        else if (job->kind == JOB_REMOVE)
+        {
+            snprintf(text, sizeof(text), tr("%s wasn't uninstalled: %s."), name,
+                     job->error[0] ? tr(job->error) : tr("the uninstall stopped"));
+            app_message_box(text);
+        }
+        else
+        {
+            snprintf(text, sizeof(text), tr("%s wasn't installed: %s. Nothing was changed."), name,
+                     job->error[0] ? tr(job->error) : tr("the install stopped"));
+            app_message_box(text);
+        }
+    }
+}
+
+/* Automatic updates (Settings > Store): once a refresh has its answers, every update the player wants goes in the
+ * queue. Once a catalog. */
+static void auto_update(void)
+{
+    static int done_for = -1;
+    char reason[256];
+    if (!app.settings.auto_update)
         return;
     store_lock();
-    char name[64];
-    str_copy(name, sizeof(name), job->app < store_catalog()->app_count ? store_catalog()->apps[job->app].name
-                                                                       : job->title);
+    const bool ready = (store_catalog_state() == CATALOG_READY || store_catalog_state() == CATALOG_COPY) &&
+                       !store_catalog_busy() && !store_checking();
+    const int generation = store_generation();
+    int list[CATALOG_MAX_APPS], n = 0;
+    if (ready && done_for != generation)
+        for (int i = 0; i < store_catalog()->app_count; ++i)
+            if (store_update_wanted(i) && strcmp(store_catalog()->apps[i].title_id, NP_TITLE_ID) != 0)
+                list[n++] = i;
     store_unlock();
-    if (job->phase == JOB_INSTALLED)
+    if (!ready || done_for == generation)
+        return;
+    done_for = generation;
+    int queued = 0;
+    for (int i = 0; i < n; ++i)
+        queued += store_install(list[i], "", reason, sizeof(reason));
+    if (queued)
     {
-        if (job->fresh)
-            snprintf(text, sizeof(text),
-                     tr("%s %s is installed in %s. The homebrew loader lists it after its next scan or a restart."),
-                     name, job->version, job->folder[0] ? job->folder : "its folder");
-        else
-            snprintf(text, sizeof(text), tr("%s is updated to %s."), name, job->version);
-        app_toast_for(text, 5.0f);
+        char text[160];
+        snprintf(text, sizeof(text), queued == 1 ? tr("Updating 1 app by itself (Settings > Store).")
+                                                 : tr("Updating %d apps by themselves (Settings > Store)."),
+                 queued);
+        app_toast_for(text, 4.0f);
     }
-    else if (job->phase == JOB_CANCELLED)
-        app_toast(tr("The install was cancelled. Nothing was changed."));
-    else if (job->mismatch)
-    {
-        snprintf(text, sizeof(text),
-                 tr("%s wasn't installed: the download doesn't match its release's checksum, so nothing was "
-                    "unpacked and nothing was changed. Try again; if it happens again, tell the app's author."),
-                 name);
-        app_message_box(text);
-    }
-    else if (job->no_loader)
-        app_message_box(tr("No payload loader took Solanum's install helper. Is the HEN's ELF loader (port 9021) "
-                           "running? Nothing was changed."));
-    else
-    {
-        snprintf(text, sizeof(text), tr("%s wasn't installed: %s. Nothing was changed."), name,
-                 job->error[0] ? job->error : tr("the install stopped"));
-        app_message_box(text);
-    }
-    store_job_finish();
 }
 
 /* ---------------------------------------------------------------- start-up */
@@ -480,6 +611,7 @@ static void want_text(void)
         {
             text_want(catalog->apps[i].name);
             text_want(catalog->apps[i].summary);
+            text_want(catalog->apps[i].author);
         }
     }
     for (int i = 0; i < catalog->app_count; ++i)
@@ -497,6 +629,8 @@ int main(int argc, char **argv)
     char root[NP_PATH_MAX];
     plat_default_root(root, sizeof(root));
     config_paths(&app.paths, root);
+    /* The USB keyboard's library first: a process the HEN has freed can't load it any more (keys.c). */
+    plat_keyboard_prepare();
     /* Unlock before SDL starts any thread: the HEN changes this process's credentials. */
     app.sandboxed = !plat_prepare_storage(app.sandbox_reason, sizeof(app.sandbox_reason));
     setenv("PS5_VIDEOOUT_PARAM_JSON", "/nonexistent", 1);
@@ -513,7 +647,6 @@ int main(int argc, char **argv)
     if (!text_init())
         plat_notify(NP_TITLE ": interface font missing from assets/fonts");
     theme_apply(THEME_NIGHTSHADE);
-    i18n_set(LANG_EN);
 
     make_folders();
     char log_path[NP_PATH_MAX];
@@ -580,9 +713,11 @@ int main(int argc, char **argv)
             quit = true;
         memcpy(app.pads, pads, sizeof(app.pads));
         uint32_t pressed = nav_pressed(pads);
-        message_box_input(&pressed);
-        store_job(&app.job);
+        if (!message_box_input(&pressed))
+            overlay_input(&pressed);
+        store_poll();
         job_ended();
+        auto_update();
 
         store_lock();
         want_text();
@@ -596,6 +731,7 @@ int main(int argc, char **argv)
         case SCREEN_SETTINGS: settings_screen(pressed); break;
         default: break;
         }
+        overlay_draw();
         message_box_draw();
         toast_render();
         store_unlock();
@@ -607,7 +743,7 @@ int main(int argc, char **argv)
     /* Only the desktop build gets here, and the PS5's when Solanum closes itself (Close, or opening an app). */
     ps5_crash_step("shutdown");
     np_log("shutdown: leaving the main loop");
-    store_cancel();
+    store_cancel_all();
     app_save_settings();
 #if !defined(__PROSPERO__)
     plat_audio_close();

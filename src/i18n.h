@@ -9,9 +9,14 @@ enum Lang
 {
     LANG_EN,
     LANG_FR,
-    LANG_PT, /* Portugal */
-    LANG_ES, /* Latin America */
+    LANG_PT, /* Portuguese (the console's Portugal and Brazil alike) */
+    LANG_ES, /* Spanish (Spain and Latin America alike) */
     LANG_JA,
+    LANG_DE,
+    LANG_NL,
+    LANG_TR,
+    LANG_IT,
+    LANG_PL,
     LANG_COUNT
 };
 

@@ -4,6 +4,7 @@
  */
 #include "config.h"
 
+#include "i18n.h"
 #include "ui/sfx.h"
 
 #include <stdio.h>
@@ -19,6 +20,11 @@ void config_defaults(Settings *s)
     s->ui_sound = SFX_STYLE_SOFT;
     s->ui_volume = 2;
     s->update_check = true;
+    s->language = -1;
+    s->install_place = -1;
+    s->parallel = 2;
+    s->keep_versions = true;
+    s->auto_update = false;
 }
 
 static int clamp(int v, int lo, int hi)
@@ -44,6 +50,16 @@ void config_load(Settings *s, const char *path)
             s->ui_volume = clamp(v, 0, 3);
         else if (!strcmp(key, "update_check"))
             s->update_check = v != 0;
+        else if (!strcmp(key, "language"))
+            s->language = clamp(v, -1, LANG_COUNT - 1);
+        else if (!strcmp(key, "install_place"))
+            s->install_place = clamp(v, -1, 11);
+        else if (!strcmp(key, "parallel"))
+            s->parallel = clamp(v, 1, 3);
+        else if (!strcmp(key, "keep_versions"))
+            s->keep_versions = v != 0;
+        else if (!strcmp(key, "auto_update"))
+            s->auto_update = v != 0;
     }
     fclose(f);
 }
@@ -58,6 +74,8 @@ bool config_save(const Settings *s, const char *path)
     fprintf(f, "# Solanum %s settings\n", NP_VERSION);
     fprintf(f, "version = %s\n", NP_VERSION);
     fprintf(f, "ui_sound = %d\nui_volume = %d\nupdate_check = %d\n", s->ui_sound, s->ui_volume, s->update_check);
+    fprintf(f, "language = %d\ninstall_place = %d\nparallel = %d\nkeep_versions = %d\nauto_update = %d\n",
+            s->language, s->install_place, s->parallel, s->keep_versions, s->auto_update);
     const bool ok = fclose(f) == 0;
     if (ok)
     {

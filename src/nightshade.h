@@ -84,6 +84,12 @@ typedef struct
     int ui_sound;       /* SFX_STYLE_* in ui/sfx.h; SFX_STYLE_OFF mutes */
     int ui_volume;      /* 0..3 = 25/50/75/100 % */
     bool update_check;  /* look for a newer Solanum at start */
+    /* 0.2.0 */
+    int language;       /* LANG_* (i18n.h); -1 the console's */
+    int install_place;  /* where new apps go: -1 ask when there's a choice, 0 beside Solanum, 1.. apps_place(n - 1) */
+    int parallel;       /* installs at once, 1..3 */
+    bool keep_versions; /* keep each install's ZIP and the one before it, for Roll back */
+    bool auto_update;   /* update the apps by themselves after each refresh (not the held or skipped ones) */
 } Settings;
 
 /* Data layout below the data folder (NP_DATA on the console). */

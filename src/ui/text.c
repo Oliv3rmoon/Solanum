@@ -21,7 +21,7 @@
 #include <string.h>
 
 #define FIRST_CP 32
-#define CP_COUNT 224 /* U+0020..U+00FF */
+#define CP_COUNT 352 /* U+0020..U+017F: Latin-1 and Latin Extended-A (Solanum: Turkish, Polish) */
 #define MAX_ATLASES 16
 #define MAX_EXTRA 1024
 
@@ -217,7 +217,7 @@ static void collect_extra(void)
         while (*s)
         {
             int cp = decode(&s);
-            if (cp <= 0xff || extra_count == MAX_EXTRA || !stbtt_FindGlyphIndex(&jp_info, cp))
+            if (cp < FIRST_CP + CP_COUNT || extra_count == MAX_EXTRA || !stbtt_FindGlyphIndex(&jp_info, cp))
                 continue;
             bool seen = false;
             for (int k = 0; k < extra_count && !seen; ++k)
@@ -267,9 +267,8 @@ static Atlas *get_atlas(int weight, float size)
     int over = px <= 32 ? 2 : 1;
     a->width = px <= 32 ? 512 : px <= 64 ? 1024 : 2048;
     a->height = px <= 48 ? 512 : 1024;
-    if (extra_count)
     {
-        /* room for the Japanese glyphs too: about (1.25 px)^2 each */
+        /* room for the Latin glyphs and the Japanese ones: about (1.25 px)^2 each */
         double need = (CP_COUNT * 0.6 + extra_count) * (px * 1.25) * (px * 1.25) * over * 1.3;
         while ((double)a->width * a->height < need && a->height < 4096)
         {
@@ -278,7 +277,8 @@ static Atlas *get_atlas(int weight, float size)
             else
                 a->width *= 2;
         }
-        a->extra = calloc((size_t)extra_count, sizeof(stbtt_packedchar));
+        if (extra_count)
+            a->extra = calloc((size_t)extra_count, sizeof(stbtt_packedchar));
     }
     unsigned char *alpha = calloc((size_t)a->width * a->height, 1);
     if (!alpha)

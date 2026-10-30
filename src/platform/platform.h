@@ -26,8 +26,18 @@ bool plat_unlock_disabled(void);
 void plat_set_unlock_disabled(bool disabled);
 void plat_default_root(char *out, size_t size);
 
-/* Reads controllers. `quit` is set when the desktop window is closed. */
+/* Reads controllers. `quit` is set when the desktop window is closed. A USB keyboard's keys press buttons too
+ * (keys.c). */
 void plat_poll(PadState pads[NP_MAX_PADS], bool *quit);
+/* A USB keyboard (keys.c). plat_keyboard_prepare once, before plat_prepare_storage: on the PS5 it loads the console's
+ * keyboard library by path, which a process the HEN has freed can no longer do. */
+void plat_keyboard_prepare(void);
+bool plat_keyboard_connected(void);
+/* What was typed this frame: printable ASCII, '\b' Backspace, '\n' Enter, 0x1b Escape. Taken once; returns how
+ * many. */
+int plat_keyboard_text(char *out, int size);
+/* keys.c's part of plat_poll: the keyboard's buttons into pads[0], its typing for plat_keyboard_text. */
+void keys_poll(PadState pads[NP_MAX_PADS]);
 void plat_rumble(int port, uint16_t strong, uint16_t weak);
 /* The controller's light bar, 0xRRGGBB (ignored where unsupported). */
 void plat_set_lightbar(int port, uint32_t rgb);

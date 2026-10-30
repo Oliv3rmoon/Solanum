@@ -649,6 +649,8 @@ void plat_poll(PadState pads[NP_MAX_PADS], bool *quit)
 {
     SDL_Event event;
     bool devices_changed = false;
+    char stale[64];
+    (void)plat_keyboard_text(stale, sizeof(stale)); /* what was typed is this frame's only */
     while (SDL_PollEvent(&event))
         if (event.type == SDL_JOYDEVICEADDED || event.type == SDL_JOYDEVICEREMOVED)
             devices_changed = true;
@@ -713,6 +715,7 @@ void plat_poll(PadState pads[NP_MAX_PADS], bool *quit)
         }
     }
     order_pads(pads);
+    keys_poll(pads);
 }
 
 const char *plat_pad_name(int port)
@@ -895,16 +898,21 @@ static const struct
     {SDL_SCANCODE_ESCAPE, BTN_MENU},  {SDL_SCANCODE_TAB, BTN_MENU},
 };
 
+void keys_sdl_event(const SDL_Event *event); /* keys.c */
+
 void plat_poll(PadState pads[NP_MAX_PADS], bool *quit)
 {
     SDL_Event event;
     bool devices_changed = false;
+    char stale[64];
+    (void)plat_keyboard_text(stale, sizeof(stale)); /* what was typed is this frame's only */
     while (SDL_PollEvent(&event))
     {
         if (event.type == SDL_QUIT && quit)
             *quit = true;
         if (event.type == SDL_CONTROLLERDEVICEADDED || event.type == SDL_CONTROLLERDEVICEREMOVED)
             devices_changed = true;
+        keys_sdl_event(&event);
     }
     static bool first = true;
     if (devices_changed || first)

@@ -22,6 +22,6 @@ Bug reports, fixes and testing of Solanum are all welcome. Ask for help on the
   translate the new ones in `i18n/<language>.json`, and `python3 tools/i18n.py table`; the host checks fail until
   every language has them.
 - Never commit games, apps' release files, keys, `.env`, `build/` or `dist/`.
-- Release tags are `MAJOR.MINOR.PATCH` (`0.2.0`), matching `NP_VERSION` in `src/nightshade.h` and the
-  `contentVersion` of `sce_sys/param.json` (`00.002.000`). A tag pushed to Oliv3rmoon/Solanum builds and
+- Release tags are `MAJOR.MINOR.PATCH` (`0.3.0`), matching `NP_VERSION` in `src/nightshade.h` and the
+  `contentVersion` of `sce_sys/param.json` (`00.003.000`). A tag pushed to Oliv3rmoon/Solanum builds and
   publishes the release (`PPSA76526.zip` and `SHA256SUMS`).

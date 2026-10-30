@@ -16,6 +16,8 @@ Everything lives under `/data/solanum/` (and the app under `/data/homebrew/PPSA7
   `cache/*.zip.part`: a download while it arrives; `cache/keep/<title ID>/`: the ZIPs of each app's installed version
   and the one before it, for Roll back (Installed > Clear the cache deletes them).
 - `previous-version/`: the files of the version an update replaced, until the next update of that app.
+- `music/`: the WAV files you put there for Background music. Solanum only reads them; it never writes to the
+  folder, and nothing in it is sent anywhere.
 - `logs/solanum.log`, `logs/updater.log`, `logs/app-launch.log`: diagnostic logs.
 
 The apps it installs go in `/data/homebrew/` beside it, or in the `homebrew` folder of the drive you choose. None of this is sent anywhere by the app. You can delete it

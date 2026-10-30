@@ -8,6 +8,7 @@
  */
 #include "sfx.h"
 
+#include "../music.h"
 #include "../platform/platform.h"
 
 #include <math.h>
@@ -217,6 +218,9 @@ void sfx_play(Sfx id)
     if (silenced || !enabled || id >= SFX_COUNT || !sounds[style][id].frames || volume <= 0.0f)
         return;
     const Sound *s = &sounds[style][id];
+    /* While music plays the click is mixed into its blocks; the queue is the music's. */
+    if (music_mix(s->frames, s->count, volume))
+        return;
     /* Fast scrolling must not build a backlog of clicks. */
     if (plat_audio_queued_frames() > s->count)
         plat_audio_clear();
@@ -231,6 +235,8 @@ void sfx_play(Sfx id)
 void sfx_play_disc(void)
 {
     if (silenced || !enabled || !disc_sound.frames || volume <= 0.0f)
+        return;
+    if (music_mix(disc_sound.frames, disc_sound.count, volume * DISC_GAIN))
         return;
     int16_t *scaled = malloc(disc_sound.count * 2 * sizeof(int16_t));
     if (!scaled)

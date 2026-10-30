@@ -14,7 +14,7 @@
 #define NP_NAME "Solanum"   /* identifiers: the User-Agent of network requests, the Vulkan application name */
 #define NP_TITLE "Solanum" /* what is shown on screen */
 #define NP_TITLE_ID "PPSA76526" /* SOLAN on a phone keypad */
-#define NP_VERSION "0.2.0"
+#define NP_VERSION "0.3.0"
 #define NP_DATA "/data/solanum" /* the data folder on the console */
 #define NP_PATH_MAX 512
 
@@ -90,6 +90,10 @@ typedef struct
     int parallel;       /* installs at once, 1..3 */
     bool keep_versions; /* keep each install's ZIP and the one before it, for Roll back */
     bool auto_update;   /* update the apps by themselves after each refresh (not the held or skipped ones) */
+    /* 0.3.0 */
+    bool music;         /* play the WAV files in the music folder behind the store */
+    bool music_shuffle; /* in a random order, every file once before any repeats; else in the order of their names */
+    int music_volume;   /* 10..100 % in steps of 10 */
 } Settings;
 
 /* Data layout below the data folder (NP_DATA on the console). */
@@ -99,6 +103,7 @@ typedef struct
     char logs[NP_PATH_MAX];
     char cache[NP_PATH_MAX];   /* the catalog's copy, downloads (installs, the update) */
     char config[NP_PATH_MAX];  /* root/settings.ini */
+    char music[NP_PATH_MAX];   /* root/music: the player's WAV files */
 } Paths;
 
 void np_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0
+
+Background music: your own files, played behind the store.
+
+- **Background music.** Put WAV files in `/data/solanum/music` (Solanum makes the folder) and they play one after
+  another behind the store. Settings > Interface has **Background music** (on or off), **Shuffle music** and **Music
+  volume** (10 to 100 %). The music fades in, and fades out as an app opens, so the app starts in silence.
+- **The order.** Without shuffle, the files play in the order of their names, numbers by value (`2.wav` before
+  `10.wav`). Shuffled, every file plays once before any plays again, and a new round never opens with the file
+  just played. Changing the setting mid-song keeps that song playing. The folder is read again each time the list
+  comes round and when music is switched on, so files copied meanwhile are played; with none, switching it on says so.
+- **What it plays.** 16-bit PCM WAV files, mono or stereo, 8 to 192 kHz: what Solanum's audio already decodes. A
+  file is read as it plays, not loaded whole, and a file that can't be played is skipped with a line in the log.
+  MP3 and OGG files are left alone.
+- **A thread of its own** keeps the console's audio queue 64 ms ahead, so a slow frame of the interface never cuts
+  the music, and the interface's clicks are mixed into it instead of queued beside it.
+- The settings are in all ten languages, and `tests/music_check.c` checks the playlist, the WAV reader and the mixer.
+
 ## 0.2.0
 
 The store grows up: a catalog of 56 apps, every release pinned by its SHA-256, and everything a store should do with

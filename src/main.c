@@ -14,6 +14,7 @@
 
 #include "config.h"
 #include "i18n.h"
+#include "music.h"
 #include "platform/platform.h"
 #include "platform/ps5_crash.h"
 #include "platform/vk/vk_probe.h"
@@ -31,7 +32,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define AUDIO_RATE 48000 /* the interface sounds' */
+#define AUDIO_RATE 48000 /* the interface sounds' and the music's */
+#define MUSIC_FADE_MS 800 /* the music going quiet as an app opens (Solanum closes 900 ms after) */
 
 App app = {.dt = 1.0f / 60.0f, .page_app = -1, .tip = -1, .last_egg = -1};
 
@@ -317,6 +319,7 @@ static uint32_t nav_pressed(const PadState *pads)
 void app_apply_settings(void)
 {
     sfx_configure(app.settings.ui_sound, (app.settings.ui_volume + 1) * 25);
+    music_configure(app.settings.music, app.settings.music_shuffle, app.settings.music_volume);
     store_set_parallel(app.settings.parallel);
     store_set_keep(app.settings.keep_versions);
     const int lang = app.settings.language >= 0 ? app.settings.language : plat_system_language();
@@ -447,6 +450,7 @@ static void carry_out(void)
             snprintf(text, sizeof(text), tr("Opening %s..."), name);
             app_toast_for(text, 3.0f);
             app_save_settings();
+            music_fade_out(MUSIC_FADE_MS);
             app.quit_at = plat_ticks_us() + 900000;
             break;
         case OPEN_NOT_LISTED:
@@ -574,7 +578,7 @@ static void auto_update(void)
 
 static void make_folders(void)
 {
-    const char *dirs[] = {app.paths.root, app.paths.logs, app.paths.cache};
+    const char *dirs[] = {app.paths.root, app.paths.logs, app.paths.cache, app.paths.music};
     for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); ++i)
         make_dirs(dirs[i]);
     char probe[NP_PATH_MAX];
@@ -667,6 +671,7 @@ int main(int argc, char **argv)
     plat_audio_open(AUDIO_RATE);
     sfx_init(AUDIO_RATE);
     app_apply_settings();
+    music_start(app.paths.music, AUDIO_RATE);
     app.random = apps_seed(plat_ticks_us() ^ (uint64_t)SDL_GetPerformanceCounter());
 
 #if defined(__PROSPERO__)
@@ -745,6 +750,7 @@ int main(int argc, char **argv)
     np_log("shutdown: leaving the main loop");
     store_cancel_all();
     app_save_settings();
+    music_stop();
 #if !defined(__PROSPERO__)
     plat_audio_close();
     icons_shutdown();

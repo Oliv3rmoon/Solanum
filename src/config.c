@@ -25,6 +25,9 @@ void config_defaults(Settings *s)
     s->parallel = 2;
     s->keep_versions = true;
     s->auto_update = false;
+    s->music = true; /* plays only once there are files in the music folder */
+    s->music_shuffle = false;
+    s->music_volume = 50;
 }
 
 static int clamp(int v, int lo, int hi)
@@ -60,6 +63,12 @@ void config_load(Settings *s, const char *path)
             s->keep_versions = v != 0;
         else if (!strcmp(key, "auto_update"))
             s->auto_update = v != 0;
+        else if (!strcmp(key, "music"))
+            s->music = v != 0;
+        else if (!strcmp(key, "music_shuffle"))
+            s->music_shuffle = v != 0;
+        else if (!strcmp(key, "music_volume"))
+            s->music_volume = clamp((v + 5) / 10 * 10, 10, 100);
     }
     fclose(f);
 }
@@ -76,6 +85,7 @@ bool config_save(const Settings *s, const char *path)
     fprintf(f, "ui_sound = %d\nui_volume = %d\nupdate_check = %d\n", s->ui_sound, s->ui_volume, s->update_check);
     fprintf(f, "language = %d\ninstall_place = %d\nparallel = %d\nkeep_versions = %d\nauto_update = %d\n",
             s->language, s->install_place, s->parallel, s->keep_versions, s->auto_update);
+    fprintf(f, "music = %d\nmusic_shuffle = %d\nmusic_volume = %d\n", s->music, s->music_shuffle, s->music_volume);
     const bool ok = fclose(f) == 0;
     if (ok)
     {
@@ -92,4 +102,5 @@ void config_paths(Paths *p, const char *root)
     path_join(p->logs, sizeof(p->logs), root, "logs");
     path_join(p->cache, sizeof(p->cache), root, "cache");
     path_join(p->config, sizeof(p->config), root, "settings.ini");
+    path_join(p->music, sizeof(p->music), root, "music");
 }

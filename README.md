@@ -23,7 +23,7 @@ changed before an update, rolls back, installs older versions, uninstalls, and o
 are those of
 [Nightshade](https://github.com/Oliv3rmoon/Nightshade)'s Settings > Apps, and it is built on
 [Dulcamara](https://github.com/Oliv3rmoon/Dulcamara)'s frontend, which is
-[Mandrake](https://github.com/Oliv3rmoon/Mandrake)'s. The current version is **0.2.0**; what changed is in the
+[Mandrake](https://github.com/Oliv3rmoon/Mandrake)'s. The current version is **0.3.0**; what changed is in the
 [changelog](docs/CHANGELOG.md).
 
 ## What you get
@@ -54,6 +54,8 @@ are those of
 - **Custom catalogs.** Add another catalog (a GitHub `owner/name` or an HTTPS `catalog.json`) in Settings >
   Catalogs. Its apps are marked third-party, never attested, ask before they install, and are checked against
   GitHub alone.
+- **Background music.** Put WAV files in `/data/solanum/music` and they play behind the store, in the order of their
+  names or shuffled, with a volume of their own (Settings > Interface); they fade out as an app opens.
 - **Ten languages:** English, French, Portuguese, Spanish, Japanese, German, Dutch, Turkish, Italian and Polish. And
   a USB keyboard works as well as the controller.
 - **Open source only.** The catalog lists open-source homebrew with no game files, each linking its source and its
@@ -88,7 +90,7 @@ carries; see Mandrake's README,
 | Circle | Back; during an install, cancel it (until its files are being put in place) |
 | Square | Ask for the catalogs and the newest releases again |
 | L2 / R2, right stick | Scroll the release notes |
-| OPTIONS | Settings: language, sounds, where new apps go, installs at once, keeping versions, automatic updates, custom catalogs, Solanum's own updates, closing it |
+| OPTIONS | Settings: language, sounds, music, where new apps go, installs at once, keeping versions, automatic updates, custom catalogs, Solanum's own updates, closing it |
 
 On the search keyboard, L1 switches capitals. A **USB keyboard** works too: the arrows move, Enter chooses, Escape
 or Backspace goes back, Tab and Shift+Tab change tab, `/` searches, F5 refreshes, F10 opens Settings, and typing
@@ -96,6 +98,15 @@ types (in Browse, typing starts a search).
 
 A new app appears on the home screen once the homebrew loader has looked again (ShadowMountPlus's next scan, or
 a restart). Until then Open says so; afterwards Open works from Solanum and the home screen alike.
+
+## Background music
+
+Copy WAV files (16-bit PCM, mono or stereo, 8 to 192 kHz) into `/data/solanum/music` over FTP; Solanum makes the
+folder. Settings > Interface switches the music on or off, shuffles it and sets its volume. Without shuffle the files
+play in the order of their names (`2.wav` before `10.wav`); shuffled, every file plays once before any plays again.
+The folder is read again when the list comes round, so a file you add is played in the next round. MP3 and OGG files
+are not played, because Solanum has no decoder for them: convert them to WAV first. The music fades out when an app
+opens. Nothing is downloaded or sent: Solanum only reads the files you put there.
 
 ## How an install works
 
@@ -190,7 +201,8 @@ The host checks need no PS5 SDK, only a C and C++ compiler:
 make host-checks   # the store (tests/store_check.c, on the live catalog, the pinned one and the apps' real
                    # releases in tests/fixtures), the install helper's whole conversation with installs on any
                    # drive and uninstalls (tests/helper_check.cpp), Solanum's own update
-                   # (tests/update_release_check.c), and the translations (tests/test_i18n.py)
+                   # (tests/update_release_check.c), the background music's playlist, WAV reader and mixer
+                   # (tests/music_check.c), and the translations (tests/test_i18n.py)
 make desktop       # the app in a window on this computer (SDL2), its store answering from tests/fixtures
 ```
 
@@ -201,6 +213,7 @@ make desktop       # the app in a window on this computer (SDL2), its store answ
 | `src/apps.c` | where an app is, what a release offers (checked against the catalog's pins), the launch conversation, search, the Konami code, tips |
 | `src/store.c` | the store's thread, the job queue (installs, updates, versions, roll backs, uninstalls), Versions, storage, Open |
 | `src/resume.c` | downloads that go on where they stopped |
+| `src/music.c`, `src/playlist.c`, `src/wavstream.c`, `src/mixer.c` | the background music: its thread, the playlist (name order or shuffle), the WAV reader and the mixer that puts the interface's clicks into it |
 | `src/keep.c`, `src/prefs.c`, `src/custom.c` | the kept ZIPs for Roll back, the player's holds and skips, the custom catalogs |
 | `src/i18n.c`, `i18n/` | the ten languages (`tools/i18n.py` writes `src/i18n_table.inc` from `i18n/<language>.json`) |
 | `src/ui/` | Browse, Updates, Installed, Downloads, About, the app pages and their menus, the keyboard, Settings |

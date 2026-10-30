@@ -6,6 +6,7 @@
 #include "../app.h"
 #include "../config.h"
 #include "../i18n.h"
+#include "../music.h"
 #include "../platform/platform.h"
 #include "../update.h"
 #include "../custom.h"
@@ -63,6 +64,8 @@ typedef struct
 
 static const char *const UI_SOUNDS[] = {"Soft", "Wood", "Pop", "Chime", "Classic", "Off"};
 static const char *const UI_VOLUMES[] = {"25%", "50%", "75%", "100%"};
+static const char *const MUSIC_VOLUMES[] = {"10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%"};
+static const int MUSIC_VOLUME_VALUES[] = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
 /* each language in its own words (i18n_name), the first the console's */
 static const char *const LANGUAGES[] = {"The console's", "English", "Français", "Português", "Español",
                                         "日本語",        "Deutsch", "Nederlands", "Türkçe",  "Italiano",
@@ -83,6 +86,16 @@ static const Row INTERFACE_ROWS[] = {
      N(UI_SOUNDS), NULL, A_NONE},
     {"Interface volume", "How loud those clicks are.", K_CHOICE, FIELD(ui_volume), UI_VOLUMES, N(UI_VOLUMES), NULL,
      A_NONE},
+    {"Background music", "Plays the WAV files you put in /data/solanum/music behind the store, one after another, and "
+                         "fades out when an app opens.",
+     K_TOGGLE, FIELD(music), NULL, 0, NULL, A_NONE},
+    {"Shuffle music", "Plays the files in a random order, every one once before any plays again. Off plays them in "
+                      "the order of their names.",
+     K_TOGGLE, FIELD(music_shuffle), NULL, 0, NULL, A_NONE},
+    {"Music volume", "How loud the music is. The interface sounds keep their own volume.", K_CHOICE,
+     FIELD(music_volume), MUSIC_VOLUMES, N(MUSIC_VOLUMES), MUSIC_VOLUME_VALUES, A_NONE},
+    {"Music files go in /data/solanum/music: WAV, 16-bit PCM, mono or stereo. MP3 and OGG files are not played.",
+     NULL, K_INFO, 0, NULL, 0, NULL, A_NONE},
     {"A USB keyboard works too: arrows move, Enter chooses, Escape goes back, Tab changes tab, / searches.", NULL,
      K_INFO, 0, NULL, 0, NULL, A_NONE},
 };
@@ -207,8 +220,10 @@ static bool selectable(const Row *r)
 
 static void changed(const Row *r)
 {
-    (void)r;
     app_apply_settings();
+    /* switching music on with nothing to play would otherwise do nothing at all */
+    if (r->kind == K_TOGGLE && r->field == FIELD(music) && app.settings.music && music_available() == 0)
+        app_toast("There are no WAV files in /data/solanum/music yet.");
 }
 
 static void run_action(int action)

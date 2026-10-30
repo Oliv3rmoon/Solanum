@@ -363,7 +363,7 @@ fi
 mkdir -p "$app/licenses"
 cp "$root/docs/THIRD-PARTY.txt" "$app/licenses/THIRD-PARTY.txt"
 cp "$root/LICENSE" "$app/licenses/LICENSE-Solanum.txt"
-for pair in "third_party/miniz/LICENSE:LICENSE-miniz.txt"; do
+for pair in "third_party/miniz/LICENSE:LICENSE-miniz.txt" "third_party/qrcodegen/LICENSE:LICENSE-qrcodegen.txt"; do
     [[ -f $root/${pair%%:*} ]] || { echo "missing licence: ${pair%%:*}" >&2; exit 2; }
     cp "$root/${pair%%:*}" "$app/licenses/${pair##*:}"
 done

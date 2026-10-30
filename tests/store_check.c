@@ -1051,6 +1051,31 @@ static void check_pins(void)
            "data folders: one of its own in /data, never one the console, the HEN or Solanum keeps");
 }
 
+/* Solanum-Catalog's catalog as its pin workflow writes it (fixtures/catalog-pinned.json, 0.2.0's): every app read,
+ * nothing left out, every one with its pinned release, so not one request to GitHub's API is needed to show them. */
+static void check_pinned_catalog(void)
+{
+    size_t length;
+    char *json = slurp("catalog-pinned.json", &length);
+    log_count = 0;
+    const int count = catalog_parse(json, length, &catalog, collect, NULL);
+    EXPECT(count >= 50, "the pinned catalog's apps are read");
+    for (int i = 0; i < log_count; ++i)
+        printf("  logged: %s\n", log_lines[i]);
+    EXPECT(log_count == 0, "the pinned catalog leaves nothing out");
+    int pinned = 0, tagged = 0;
+    for (int i = 0; i < catalog.app_count; ++i)
+    {
+        github_release_asset release;
+        pinned += apps_release_from_pin(&catalog.apps[i], 0, &release) && strlen(release.sha256) == 64 &&
+                  strncmp(release.url, "https://github.com/", 19) == 0;
+        tagged += catalog.apps[i].tag_count > 0;
+    }
+    EXPECT(pinned == catalog.app_count, "every app's release is pinned, with an address on github.com");
+    EXPECT(tagged == catalog.app_count, "every app has tags to search by");
+    free(json);
+}
+
 static void check_merge(void)
 {
     static Catalog official, custom;
@@ -1341,6 +1366,7 @@ int main(int argc, char **argv)
     check_konami();
     check_pick();
     check_pins();
+    check_pinned_catalog();
     check_merge();
     check_search();
     check_prefs();

@@ -26,6 +26,8 @@ Fonts in assets/fonts - SIL Open Font License 1.1 (notices beside them): Inter, 
   IBM Plex Mono; Tabler Icons - MIT License
 dlmalloc (Doug Lea) - public domain (CC0)
 miniz - MIT License - LICENSE-miniz.txt - https://github.com/richgel999/miniz
+QR Code generator 1.8.0 (Project Nayuki) - MIT License - LICENSE-qrcodegen.txt -
+  https://github.com/nayuki/QR-Code-generator
 stb_image, stb_truetype (Sean Barrett) - public domain / MIT
 
 Beside eboot.bin:

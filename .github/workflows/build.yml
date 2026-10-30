@@ -83,15 +83,16 @@ jobs:
           path: build/framegen-ps5
           key: framegen-ps5-${{ hashFiles('third_party/framegen/**', 'src/platform/vk/fg_bridge.h', 'tools/build-framegen.sh', 'tooling/prospero-clang18') }}
 
-      # On the build machine: the catalog, the release's file, checksums (a download that isn't the release's is
-      # never unpacked), resuming, where an app is, the launch payload's conversation, the Konami code and the
-      # random tips and eggs (tests/store_check.c); the install helper's whole conversation
-      # (tests/helper_check.cpp); and Solanum's own update's release decision.
+      # On the build machine: the catalog, its pinned releases and custom catalogs, the release's file, checksums (a
+      # download that isn't the release's is never unpacked), resuming, roll backs from kept ZIPs, holds and skips,
+      # where an app is, the launch payload's conversation, the Konami code and the random tips and eggs
+      # (tests/store_check.c); the install helper's whole conversation, installs on any drive and uninstalls
+      # (tests/helper_check.cpp); Solanum's own update's release decision; and the translations (tests/test_i18n.py).
       - name: Host checks
         env:
           CC: clang-18
           CXX: clang++-18
-        run: python3 -m unittest tests.test_store tests.test_update_release -v
+        run: python3 -m unittest tests.test_store tests.test_update_release tests.test_i18n -v
 
       - name: Build
         env:
@@ -123,7 +124,7 @@ jobs:
                   raise SystemExit(f"ZIP check failed: entries outside {title}/: {outside[:5]}")
               for needed in ("eboot.bin", "sce_sys/param.json", "sce_sys/icon0.png", "sce_sys/pic0.dds",
                              "sce_sys/pic1.dds", "self-updater.elf", "app-launch.elf", "lapy.elf",
-                             "licenses/LICENSE-Solanum.txt", "licenses/LICENSE-miniz.txt",
+                             "licenses/LICENSE-Solanum.txt", "licenses/LICENSE-miniz.txt", "licenses/LICENSE-qrcodegen.txt",
                              "licenses/THIRD-PARTY.txt", "licenses/Lapy-MIT.txt"):
                   if f"{title}/{needed}" not in names:
                       raise SystemExit(f"ZIP check failed: {title}/{needed} is missing")

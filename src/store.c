@@ -33,7 +33,7 @@
 static SDL_mutex *lock;
 static char data_folder[NP_PATH_MAX], cache[NP_PATH_MAX], registered[NP_PATH_MAX], homebrew[NP_PATH_MAX];
 static char own_folder[256];
-static char roots[40][48];
+static char roots[40][256];
 static int root_count;
 
 /* What the screens see (under the lock). */
@@ -424,7 +424,7 @@ static void look(void)
                                             : OFFER_NONE;
             /* An app the catalog lists, installed some other way: Solanum looks after it from now on (its updates,
              * its roll back once it has one, its uninstall). */
-            if (found.folder[0] && !found.image)
+            if (found.folder[0] && !found.image && strcmp(titles[i], NP_TITLE_ID) != 0)
             {
                 AppPrefs *prefs = prefs_get(titles[i], true);
                 if (prefs && prefs->by == BY_UNKNOWN)
@@ -783,7 +783,7 @@ void store_init(const char *data, const char *registered_folder, const char *hom
     const int count = apps_console_roots(all, 36);
     for (int i = 0; i < count && root_count < 40; ++i)
         if (root_count == 0 || strcmp(all[i], roots[0]) != 0)
-            memcpy(roots[root_count++], all[i], sizeof(roots[0]));
+            str_copy(roots[root_count++], sizeof(roots[0]), all[i]);
 #else
     if ((root_count == 0 || strcmp(homebrew, roots[0]) != 0) && strlen(homebrew) < sizeof(roots[0]))
         str_copy(roots[root_count++], sizeof(roots[0]), homebrew);

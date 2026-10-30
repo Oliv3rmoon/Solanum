@@ -525,7 +525,9 @@ static void draw_notes(int index, float x, float y, float w, float h)
     text_draw_fit(x + 32, y + 26, 30, FONT_BOLD, TH_TEXT, ALIGN_LEFT, w - 64, title);
     char line[160];
     snprintf(line, sizeof(line), "%s  ·  %s  ·  %s", date, size,
-             s->release.from_sums ? tr("checked against SHA256SUMS") : tr("checked against GitHub's digest"));
+             s->release.pinned      ? tr("checked against the catalog's pin")
+             : s->release.from_sums ? tr("checked against its checksum file")
+                                    : tr("checked against GitHub's digest"));
     text_draw_fit(x + 32, y + 70, 22, FONT_REGULAR, TH_TEXT_DIM, ALIGN_LEFT, w - 64, line);
     draw_rect(x + 32, y + 110, w - 64, 2, TH_DIVIDER);
     const char *notes = s->release.notes[0] ? s->release.notes : tr("The release has no notes.");
@@ -600,14 +602,6 @@ static void updates(uint32_t pressed)
             text_draw(plat_width() * 0.5f, CONTENT_Y + 256, 24, FONT_REGULAR, TH_GOLD, ALIGN_CENTER,
                       tr("GitHub's hourly limit was reached: the catalog's pins are shown. Refresh in a while."));
     }
-    if (held)
-    {
-        char line[120];
-        snprintf(line, sizeof(line), held == 1 ? tr("1 update is held or skipped (an app's More)")
-                                               : tr("%d updates are held or skipped (an app's More)"),
-                 held);
-        text_draw(LIST_X, STRIP_Y - 40, 22, FONT_REGULAR, TH_TEXT_DIM, ALIGN_LEFT, line);
-    }
     else
     {
         updates_top = list_top_row(updates_top, updates_row, visible, n);
@@ -615,6 +609,14 @@ static void updates(uint32_t pressed)
         for (int i = updates_top; i < n && i < updates_top + visible; ++i)
             draw_app_row(list[i], x, CONTENT_Y + (i - updates_top) * h, w, h, i == updates_row);
         draw_notes(list[updates_row], x + w + 56, CONTENT_Y - 16, plat_width() - LIST_X - (x + w + 56), 690);
+    }
+    if (held)
+    {
+        char line[120];
+        snprintf(line, sizeof(line), held == 1 ? tr("1 update is held or skipped (an app's More)")
+                                               : tr("%d updates are held or skipped (an app's More)"),
+                 held);
+        text_draw(LIST_X, STRIP_Y - 40, 22, FONT_REGULAR, TH_TEXT_DIM, ALIGN_LEFT, line);
     }
     static const int glyphs[] = {GLYPH_CROSS, GLYPH_TRIANGLE, GLYPH_SQUARE, GLYPH_R2, GLYPH_START};
     static const char *const labels[] = {"Update", "Update all", "App page", "Scroll the notes", "Settings"};

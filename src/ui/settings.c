@@ -248,7 +248,7 @@ static const char *update_text(void)
         return text;
     case UPDATE_INSTALLING: return tr("Installing...");
     case UPDATE_INSTALLED: return tr("Installed: restart to use it");
-    case UPDATE_FAILED: return update_message();
+    case UPDATE_FAILED: return tr(update_message());
     default: return "";
     }
 }

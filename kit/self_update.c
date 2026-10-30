@@ -529,7 +529,13 @@ static void *run_job(void *argument)
     job->channel_open = 1;
     pthread_mutex_unlock(&job->lock);
 
-    if (install)
+    if (install && offer->where[0] != '\0')
+        /* Solanum: a new app in the folder the player chose (self_update_protocol.h, install-to). */
+        length = snprintf(request, sizeof(request), "%s\ninstall-to\n%s\n%s\n%s\n%llu\n%s\n%s\n%s\n%s\n%s\n",
+                          SELF_UPDATE_MAGIC, offer->title, offer->installed, offer->available,
+                          (unsigned long long)offer->size, offer->sha256, offer->name, offer->version,
+                          offer->beside, offer->where);
+    else if (install)
         length = snprintf(request, sizeof(request), "%s\ninstall\n%s\n%s\n%s\n%llu\n%s\n%s\n%s\n%s\n",
                           SELF_UPDATE_MAGIC, offer->title, offer->installed, offer->available,
                           (unsigned long long)offer->size, offer->sha256, offer->name, offer->version,

@@ -132,7 +132,8 @@ struct App
         }
         else if (said == "staged")
             push(apply ? "apply\n" : "cancel\n");
-        else if ((said == "applying" && !install) || said.rfind("installed", 0) == 0 || said.rfind("fail ", 0) == 0)
+        else if ((said == "applying" && !install) || said.rfind("installed", 0) == 0 || said.rfind("fail ", 0) == 0 ||
+                 said.rfind("removed ", 0) == 0)
             end();
     }
     long read(void *data, std::size_t size)
@@ -193,7 +194,7 @@ App &new_app()
 struct Console
 {
     fs::path base, data, homebrew;
-    std::vector<std::string> notices, log;
+    std::vector<std::string> notices, log, unregistered;
     self_update::Environment environment;
 
     explicit Console(const std::string &name)
@@ -220,6 +221,12 @@ struct Console
         {
             title = "PPSA76526";
             return true;
+        };
+        environment.data_root = data.string();
+        environment.unregister = [this](const std::string &title)
+        {
+            unregistered.push_back(title);
+            return 0;
         };
     }
     ~Console()
@@ -481,6 +488,121 @@ void other_apps()
                "the asking app's own title is refused");
     }
 }
+// Solanum: a new app put in a folder the player chose (install-to), on another drive.
+std::vector<std::string> install_to_request(const std::string &title, const std::string &installed,
+                                            const std::string &archive, const std::string &digest,
+                                            const std::string &where)
+{
+    auto request = install_request(title, installed, "any", archive, digest, "Kodi");
+    request[1] = "install-to";
+    request.push_back(where);
+    return request;
+}
+
+void chosen_folder()
+{
+    Console console("where");
+    console.app("PPSA76526", "01.010.000", console.homebrew / "PPSA76526");
+    const fs::path usb = console.base / "mnt/usb0";
+    fs::create_directories(usb);
+    console.environment.drives.push_back(usb.string());
+    console.environment.roots.push_back((usb / "homebrew").string());
+    console.environment.roots.push_back((console.base / "mnt/usb1/homebrew").string());
+    console.environment.drives.push_back((console.base / "mnt/usb1").string());
+    App &app = new_app();
+    app.install = true;
+    app.archive = release_zip("PPSA99420", "22.000.000", "kodi");
+    const fs::path folder = usb / "homebrew/PPSA99420";
+    expect(console.talk(app, install_to_request("PPSA99420", "none", app.archive, sha256(app.archive),
+                                                (usb / "homebrew").string())) == 0 &&
+               app.last() == "installed 22.000.000 " + folder.string() && read(folder / "eboot.bin") == "kodi",
+           "install-to: a new app goes in the chosen folder, which is made");
+    expect(!fs::exists(console.homebrew / "PPSA99420") && !fs::exists(usb / "self-update"),
+           "install-to: nothing beside Solanum, no work folder left on the drive");
+
+    App &outside = new_app();
+    outside.install = true;
+    outside.archive = release_zip("PPSA99505", "00.007.000", "jelly");
+    expect(console.talk(outside, install_to_request("PPSA99505", "none", outside.archive, sha256(outside.archive),
+                                                    (console.base / "elsewhere").string())) == 1 &&
+               outside.last() == "fail The request was refused",
+           "install-to: a folder ShadowMountPlus doesn't scan is refused");
+    App &absent = new_app();
+    absent.install = true;
+    absent.archive = outside.archive;
+    expect(console.talk(absent, install_to_request("PPSA99505", "none", absent.archive, sha256(absent.archive),
+                                                   (console.base / "mnt/usb1/homebrew").string())) == 1 &&
+               absent.last() == "fail The drive " + (console.base / "mnt/usb1").string() + " isn't there",
+           "install-to: a drive that isn't plugged in is refused");
+    App &update = new_app();
+    update.install = true;
+    update.archive = release_zip("PPSA99420", "22.000.001", "kodi 2");
+    expect(console.talk(update, install_to_request("PPSA99420", "22.000.000", update.archive, sha256(update.archive),
+                                                   (usb / "homebrew").string())) == 1 &&
+               update.last() == "fail The request was refused" && read(folder / "eboot.bin") == "kodi",
+           "install-to: an update stays where the app is (the request is refused)");
+}
+
+// Solanum: Uninstall.
+std::vector<std::string> remove_request(const std::string &title, const std::string &installed,
+                                        const std::string &data)
+{
+    return {"PSU1", "remove", title, installed, data, "Some app", "PPSA76526"};
+}
+
+void uninstall()
+{
+    Console console("remove");
+    console.app("PPSA76526", "01.010.000", console.homebrew / "PPSA76526");
+    const fs::path folder = console.homebrew / "PPSA99003";
+    console.app("PPSA99003", "01.000.090", folder);
+    write(console.data / "physalis/settings.ini", "x");
+    App &app = new_app();
+    expect(console.talk(app, remove_request("PPSA99003", "01.000.090", "/data/physalis")) == 0 &&
+               app.said("removing") && app.last() == "removed " + folder.string() + " 00000000",
+           "remove: the helper says what it removed and how the home screen answered");
+    expect(!fs::exists(folder) && !fs::exists(console.data / "physalis") && console.no_work_left(),
+           "remove: the app's folder and its data folder are gone, no work folder left");
+    expect(console.unregistered.size() == 1 && console.unregistered[0] == "PPSA99003",
+           "remove: the title is taken off the home screen");
+    expect(read(console.homebrew / "PPSA76526/eboot.bin") == "old program of PPSA76526",
+           "remove: Solanum is left as it was");
+    expect(console.notices.size() == 1 && console.notices[0] == "Some app was uninstalled.", "remove: its notification");
+
+    // Its folder already gone by hand: the home screen is still asked; data kept when none is named.
+    write(console.data / "kept/settings.ini", "x");
+    App &gone = new_app();
+    expect(console.talk(gone, remove_request("PPSA99003", "any", "-")) == 0 && gone.last() == "removed - 00000000" &&
+               console.unregistered.size() == 2 && fs::exists(console.data / "kept/settings.ini"),
+           "remove: an app whose folder is gone still leaves the home screen");
+
+    const auto refused = [&](const std::vector<std::string> &request, const std::string &why, const std::string &what)
+    {
+        App &asked = new_app();
+        expect(console.talk(asked, request) == 1 && asked.last() == "fail " + why, what);
+    };
+    console.app("PPSA99002", "01.000.100", console.homebrew / "PPSA99002");
+    refused(remove_request("PPSA99002", "01.000.101", "-"), "The installed app isn't the version that was asked about",
+            "remove: another version than the one asked about is not removed");
+    refused(remove_request("PPSA99002", "01.000.100", "/data/homebrew"), "The request was refused",
+            "remove: /data/homebrew is never a data folder");
+    refused(remove_request("PPSA99002", "01.000.100", "/data/../etc"), "The request was refused",
+            "remove: a data folder outside /data is refused");
+    refused(remove_request("PPSA76526", "01.010.000", "-"), "The request was refused",
+            "remove: the asking app never removes itself");
+    console.environment.running_app = [](std::string &title)
+    {
+        title = "PPSA99002";
+        return true;
+    };
+    refused(remove_request("PPSA99002", "01.000.100", "-"), "The app is running; close it and try again",
+            "remove: the running app is not removed");
+    expect(fs::exists(console.homebrew / "PPSA99002/eboot.bin"), "remove: refused, the app is as it was");
+    expect(self_update::data_folder_allowed("/data/nightshade") && !self_update::data_folder_allowed("/data/etaHEN") &&
+               !self_update::data_folder_allowed("/data/a/b") && !self_update::data_folder_allowed("/data/.hidden") &&
+               !self_update::data_folder_allowed("/data/") && !self_update::data_folder_allowed("/user/app"),
+           "data folders: one folder in /data, never the console's or the HEN's");
+}
 } // namespace
 
 int main(int argc, char **argv)
@@ -488,7 +610,11 @@ int main(int argc, char **argv)
     const bool update_only = argc == 2 && std::strcmp(argv[1], "--update-only") == 0;
     own_update();
     if (!update_only)
+    {
         other_apps();
+        chosen_folder();
+        uninstall();
+    }
     std::printf("%s update helper: %d checks of the app's own update%s, %d failed\n", failures ? "FAIL" : "PASS",
                 passed + failures, update_only ? "" : " and of installs of other apps", failures);
     return failures ? 1 : 0;

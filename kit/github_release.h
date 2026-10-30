@@ -212,6 +212,10 @@ extern "C"
         char published[24]; /* Solanum: GitHub's published_at ("2026-10-29T19:18:39Z"), or empty */
         char notes[GITHUB_RELEASE_ASSET_NOTES]; /* Solanum: the release's notes, plain text */
         int notes_truncated; /* Solanum: some were left out; the rest are on the release's page */
+        /* Solanum: the catalog pins this file's SHA-256 and size for this tag (its workflow
+           downloaded and hashed it), and any checksum file or digest agrees; the only source of
+           the SHA-256 when the release has neither. */
+        int pinned;
     } github_release_asset;
 
     /* Solanum: a release file's name from the catalog's pattern, where "{version}" stands for the
@@ -254,6 +258,20 @@ extern "C"
                                                      const char *repository, const char *pattern,
                                                      const char *sums, github_release_asset *asset,
                                                      github_release_report *report);
+
+    /* Solanum: a repository's releases (https://api.github.com/repos/<repository>/releases), for
+     * installing an older one: each element of the answer read as github_release_asset_read reads
+     * releases/latest's, drafts, pre-releases and releases without the file left out, newest first
+     * as GitHub lists them. url and page are made here, from the repository, the tag and the name;
+     * sha256 is GitHub's digest of the file when it keeps one (empty otherwise: the caller then
+     * asks the catalog's pins or the checksum file, files[i].sums_files says whether there is one).
+     * Returns how many were kept (at most `most`); -1 when the answer isn't a list. */
+#define GITHUB_RELEASE_LIST_MAX 20
+    int github_release_list_read(const char *json, size_t length, const char *repository, const char *pattern,
+                                 const char *sums, github_release_asset *out, github_release_files *files,
+                                 int most);
+    /* https://api.github.com/repos/<repository>/releases?per_page=<count>. Its length, or 0. */
+    size_t github_release_list_url(char *out, size_t size, const char *repository, int count);
 
 #ifdef __cplusplus
 }

@@ -131,6 +131,10 @@ extern "C"
            is "none" when the app isn't installed, available "any" when the release names no
            version. Empty: the app's own update, the kit's conversation unchanged. */
         char beside[10];
+        /* Solanum: the folder ShadowMountPlus scans that a new app is put in ("/mnt/usb0/homebrew"),
+           instead of beside the asking app's: the request is then "install-to", with this line
+           more. Empty: beside the asking app's, as before. */
+        char where[128];
     } self_update_offer;
 
     /* Blocking; call it from a worker thread, once per launch. */

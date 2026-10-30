@@ -704,12 +704,12 @@ namespace
 // nothing waits for it to close. The app's own update (run) has more to check and is not this.
 int install(const std::shared_ptr<Session> &shared, const std::string &title, const std::string &installed,
             const std::string &available, const std::string &size_text, const std::string &digest,
-            std::string name, std::string label)
+            std::string name, std::string label, bool chosen_folder)
 {
     Session &session = *shared;
     const Environment &environment = session.environment;
-    std::string beside;
-    if (!session.read_line(beside))
+    std::string beside, where;
+    if (!session.read_line(beside) || (chosen_folder && !session.read_line(where)))
         return 1;
     // "none": not installed yet. "any": the release names no version; its param.json says it.
     const bool fresh = installed == "none", any = available == "any";
@@ -718,10 +718,38 @@ int install(const std::shared_ptr<Session> &shared, const std::string &title, co
     const std::uint64_t size = std::strtoull(size_text.c_str(), &end, 10);
     if (!title_id(title) || !title_id(beside) || title == beside || (!fresh && !content_version(installed)) ||
         (!any && !content_version(available)) || !hex_digest(digest) || size_text.empty() || errno ||
-        *end != '\0' || size > SELF_UPDATE_MAX_ARCHIVE)
+        *end != '\0' || size > SELF_UPDATE_MAX_ARCHIVE || (chosen_folder && !fresh))
     {
         session.say("fail The request was refused\n");
         return 1;
+    }
+    // Solanum: the folder chosen for a new app must be one ShadowMountPlus scans, <drive>/homebrew,
+    // of a drive that is there; the homebrew folder itself is made when it isn't yet.
+    if (chosen_folder)
+    {
+        const bool known = std::find(environment.roots.begin(), environment.roots.end(), where) !=
+                           environment.roots.end();
+        const std::string drive = drive_root(environment.drives, where);
+        if (!known || drive.empty() || where != drive + "/homebrew")
+        {
+            session.say("fail The request was refused\n");
+            return 1;
+        }
+        if (kind(drive) != Kind::directory)
+        {
+            session.say("fail The drive " + drive + " isn't there\n");
+            return 1;
+        }
+        if (kind(where) == Kind::absent && !make_directory(where))
+        {
+            session.say("fail The folder " + where + " couldn't be made\n");
+            return 1;
+        }
+        if (kind(where) != Kind::directory)
+        {
+            session.say("fail " + where + " isn't a folder\n");
+            return 1;
+        }
     }
     name = shown(name, 64, title);
     label = shown(label, 40, title);
@@ -764,10 +792,15 @@ int install(const std::shared_ptr<Session> &shared, const std::string &title, co
     {
         if (!fresh)
             return refuse("The app's folder wasn't found");
-        Copy asking;
-        if (locate(session, beside, asking) != 1)
-            return refuse("The folder of the app asking wasn't found");
-        target = asking.path.substr(0, asking.path.rfind('/')) + "/" + title;
+        if (chosen_folder)
+            target = where + "/" + title;
+        else
+        {
+            Copy asking;
+            if (locate(session, beside, asking) != 1)
+                return refuse("The folder of the app asking wasn't found");
+            target = asking.path.substr(0, asking.path.rfind('/')) + "/" + title;
+        }
         if (kind(target) != Kind::absent)
             return refuse("A folder that isn't the app is in the way: " + target);
     }
@@ -867,21 +900,135 @@ int install(const std::shared_ptr<Session> &shared, const std::string &title, co
     clean();
     return 0;
 }
+
+// Solanum: an app removed (self_update_protocol.h, remove): its one installed folder, its place on
+// the home screen, and its data folder when one is named. Never the running app's, never the asking
+// app's, never an image, and never a folder that doesn't hold the title's param.json.
+int remove_app(const std::shared_ptr<Session> &shared)
+{
+    Session &session = *shared;
+    const Environment &environment = session.environment;
+    std::string title, installed, data, name, beside;
+    if (!session.read_line(title) || !session.read_line(installed) || !session.read_line(data) ||
+        !session.read_line(name) || !session.read_line(beside))
+        return 1;
+    if (!title_id(title) || !title_id(beside) || title == beside ||
+        (installed != "any" && !content_version(installed)) || (data != "-" && !data_folder_allowed(data)))
+    {
+        session.say("fail The request was refused\n");
+        return 1;
+    }
+    name = shown(name, 64, title);
+    const auto refuse = [&](const std::string &reason)
+    {
+        session.say("fail " + reason + "\n");
+        return 1;
+    };
+    std::string running;
+    if (!environment.running_app || !environment.running_app(running) || running.empty())
+        return refuse("The app the console runs couldn't be told, so nothing was removed");
+    if (running == title)
+        return refuse("The app is running; close it and try again");
+
+    Copy copy;
+    const int found = locate(session, title, copy);
+    if (found == -1)
+        return refuse("The app is installed as an image; remove the image itself");
+    if (found == -2)
+        return refuse("More than one copy of the app is installed");
+    if (found == -3)
+        return refuse("The installed apps couldn't all be looked at");
+    std::string removed = "-";
+    if (found == 1)
+    {
+        if (installed != "any" && copy.version != installed)
+            return refuse("The installed app isn't the version that was asked about");
+        const std::string drive = drive_root(environment.drives, copy.path);
+        const bool is_root = std::find(environment.roots.begin(), environment.roots.end(), copy.path) !=
+                             environment.roots.end();
+        if (drive.empty() || is_root || copy.path == drive)
+            return refuse("The app's folder can't be removed: " + copy.path);
+        session.say("removing\n");
+        // Out of the way at once (a rename on its own drive), then deleted.
+        const std::string base = drive + "/self-update", gone = base + "/" + title + "-removed";
+        bool moved = false;
+        if (make_directory(base) && remove_tree(gone))
+            moved = rename(copy.path.c_str(), gone.c_str()) == 0;
+        if (!moved && !remove_tree(copy.path))
+            return refuse("The app's folder couldn't be removed: " + copy.path);
+        if (moved)
+            (void)remove_tree(gone);
+        (void)rmdir(base.c_str());
+        removed = copy.path;
+        session.log("removed " + title + " " + copy.version + " from " + copy.path);
+    }
+    else
+        session.log("remove " + title + ": no folder found; its home-screen entry is asked to go all the same");
+
+    // Its place on the home screen, as the console's own uninstall takes it away.
+    const int code = environment.unregister ? environment.unregister(title) : -1;
+    char hex[16];
+    std::snprintf(hex, sizeof(hex), "%08x", static_cast<unsigned>(code));
+    session.log("remove " + title + ": home screen answered " + hex);
+
+    if (data != "-")
+    {
+        const std::string folder = environment.data_root + data.substr(5);
+        if (kind(folder) == Kind::directory && remove_tree(folder))
+            session.log("removed " + title + "'s data folder " + data);
+        else if (kind(folder) != Kind::absent)
+            session.log("remove " + title + ": its data folder " + data + " couldn't be removed");
+    }
+    session.say("removed " + removed + " " + hex + "\n");
+    if (environment.notify)
+        environment.notify(name + " was uninstalled.");
+    return 0;
+}
 } // namespace
+
+bool data_folder_allowed(const std::string &path)
+{
+    static const char *const kept[] = {"homebrew", "etahen", "solanum", "self-update", "system", "shadowmountplus",
+                                       "shadowmount", "payloads", "lapy", "user", "app", "apps", "savedata", "pkg",
+                                       "games", "tmp", "temp", "data", "mnt", "usb", "ext", "ftp", "elfldr",
+                                       "ps5_autoloader", "itemzflow", "prosperostore", "sandbox"};
+    if (path.size() < 7 || path.size() > 70 || path.compare(0, 6, "/data/") != 0)
+        return false;
+    const std::string name = path.substr(6);
+    if (name[0] == '.')
+        return false;
+    std::string lower;
+    for (const char c : name)
+    {
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' ||
+              c == '-'))
+            return false;
+        lower.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c);
+    }
+    for (const char *one : kept)
+        if (lower == one)
+            return false;
+    return true;
+}
 
 int run(const Environment &environment, const Io &io)
 {
     const auto shared = std::make_shared<Session>(environment, io);
     Session &session = *shared;
     std::string magic, verb, title, installed, available, size_text, digest, name, label;
-    if (!session.read_line(magic) || magic != SELF_UPDATE_MAGIC || !session.read_line(verb) ||
-        !session.read_line(title) || !session.read_line(installed) ||
+    if (!session.read_line(magic) || magic != SELF_UPDATE_MAGIC || !session.read_line(verb))
+        return 1;
+    // Solanum: an app removed, with lines of its own.
+    if (verb == "remove")
+        return remove_app(shared);
+    if (!session.read_line(title) || !session.read_line(installed) ||
         !session.read_line(available) || !session.read_line(size_text) ||
         !session.read_line(digest) || !session.read_line(name) || !session.read_line(label))
         return 1;
-    // ProsperoEden: another app's release, with one line more (install above).
-    if (verb == "install")
-        return install(shared, title, installed, available, size_text, digest, name, label);
+    // ProsperoEden: another app's release, with one line more (install above); Solanum: or two,
+    // with the folder chosen for it.
+    if (verb == "install" || verb == "install-to")
+        return install(shared, title, installed, available, size_text, digest, name, label, verb == "install-to");
     char *end = nullptr;
     errno = 0;
     const std::uint64_t size = std::strtoull(size_text.c_str(), &end, 10);

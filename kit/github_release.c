@@ -1032,10 +1032,41 @@ static int sha256_digest(const char *text, char out[65])
     return 1;
 }
 
+/* Solanum: a tag of three numbers ("v0.7.0", "1.2.9") as a content version writes them ("00.007.000"); 0 for any
+ * other tag. */
+static int content_of_tag(const char *tag, char out[12])
+{
+    unsigned parts[3] = {0, 0, 0};
+    const char *rest = tag[0] == 'v' ? tag + 1 : tag;
+    int part;
+    for (part = 0; part < 3; ++part)
+    {
+        size_t digits = 0;
+        while (rest[digits] >= '0' && rest[digits] <= '9')
+        {
+            parts[part] = parts[part] * 10 + (unsigned)(rest[digits] - '0');
+            ++digits;
+        }
+        if (digits == 0 || digits > (part == 0 ? 2u : 3u))
+            return 0;
+        rest += digits;
+        if (part < 2 && *rest++ != '.')
+            return 0;
+    }
+    if (*rest != '\0')
+        return 0;
+    (void)snprintf(out, 12, "%02u.%03u.%03u", parts[0], parts[1], parts[2]);
+    return 1;
+}
+
 int github_release_asset_name(const char *pattern, const char *tag, char *out, size_t size)
 {
     static const char mark[] = "{version}";
+    /* Solanum: "{content}" is the tag as a content version, for files named after the app's contentVersion
+     * ("Jelly5-{content}.zip" with the tag "v0.7.0" is "Jelly5-00.007.000.zip"). */
+    static const char content_mark[] = "{content}";
     const char *version;
+    char content[12];
     size_t used = 0;
     if (pattern == NULL || tag == NULL || out == NULL || size == 0)
         return 0;
@@ -1051,6 +1082,14 @@ int github_release_asset_name(const char *pattern, const char *tag, char *out, s
             piece = version;
             length = strlen(version);
             pattern += sizeof(mark) - 1;
+        }
+        else if (strncmp(pattern, content_mark, sizeof(content_mark) - 1) == 0)
+        {
+            if (!content_of_tag(tag, content))
+                return 0;
+            piece = content;
+            length = strlen(content);
+            pattern += sizeof(content_mark) - 1;
         }
         else
             ++pattern;
@@ -1248,4 +1287,63 @@ github_release_reason github_release_asset_check(const self_update_platform *pla
     }
     (void)snprintf(asset->page, sizeof(asset->page), "https://github.com/%s/releases/tag/%s", repository, asset->tag);
     return asset_reason(report, GITHUB_RELEASE_NEWER);
+}
+
+/* ---- Solanum: a repository's releases ------------------------------------------------------- */
+
+size_t github_release_list_url(char *out, size_t size, const char *repository, int count)
+{
+    int written;
+    if (out == NULL || size == 0 || !github_release_repository_valid(repository) || count < 1 || count > 100)
+        return 0;
+    written = snprintf(out, size, "%s%s/releases?per_page=%d", GITHUB_RELEASE_API, repository, count);
+    if (written <= 0 || (size_t)written >= size)
+    {
+        out[0] = '\0';
+        return 0;
+    }
+    return (size_t)written;
+}
+
+int github_release_list_read(const char *json, size_t length, const char *repository, const char *pattern,
+                             const char *sums, github_release_asset *out, github_release_files *files, int most)
+{
+    size_t cursor = 0;
+    int kept = 0;
+    if (json == NULL || out == NULL || files == NULL || most <= 0 || !github_release_repository_valid(repository))
+        return -1;
+    /* One array, of objects. */
+    while (length > 0 && (json[0] == ' ' || json[0] == '\n' || json[0] == '\r' || json[0] == '\t'))
+    {
+        ++json;
+        --length;
+    }
+    if (length == 0 || json[0] != '[')
+        return -1;
+    while (kept < most)
+    {
+        const char *item = NULL;
+        size_t item_length = 0;
+        int found;
+        const int next = update_check_json_array_next(json, length, &cursor, &item, &item_length);
+        if (next == 0)
+            break;
+        if (next < 0)
+            return kept > 0 ? kept : -1;
+        if (item_length == 0 || item[0] != '{')
+            continue;
+        if (github_release_asset_read(item, item_length, pattern, sums, &out[kept], &files[kept]) !=
+            GITHUB_RELEASE_NEWER)
+            continue;
+        found = snprintf(out[kept].url, sizeof(out[kept].url), "https://github.com/%s/releases/download/%s/%s",
+                         repository, out[kept].tag, out[kept].name);
+        if (found <= 0 || (size_t)found >= sizeof(out[kept].url) || !self_update_url_allowed(out[kept].url, 0))
+            continue;
+        (void)snprintf(out[kept].page, sizeof(out[kept].page), "https://github.com/%s/releases/tag/%s", repository,
+                       out[kept].tag);
+        if (files[kept].digest[0] != '\0')
+            memcpy(out[kept].sha256, files[kept].digest, sizeof(files[kept].digest));
+        ++kept;
+    }
+    return kept;
 }

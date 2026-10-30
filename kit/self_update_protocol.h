@@ -36,6 +36,25 @@
  * at that version), or with none in a new folder beside the asking app's.
  * A helper from before this answers "fail The request was refused"; the app's
  * own update is the conversation above, unchanged.
+ *
+ * Solanum: a new app in a folder the player chose, one of those ShadowMountPlus
+ * scans (<drive>/homebrew), is "install-to" with one line more, that folder:
+ *
+ *   app     PSU1, install-to, ...the ten lines of install..., <the folder>
+ *
+ * And an app removed (Solanum's Uninstall), which sends no archive:
+ *
+ *   app     PSU1, remove, <title ID>, <its installed content version, or any>,
+ *           <its data folder, /data/<name>, or ->, <its name>,
+ *           <the asking app's title ID>                    (seven lines)
+ *   helper  removing                                     (once its folder is found)
+ *   helper  removed <folder, or - when none was found> <home-screen result, 8 hex digits>
+ *                                                        or  fail <reason>
+ *
+ * The helper removes the title's one installed folder (it must be at that
+ * version and not the running app's), asks the console's app-install service to
+ * take the title off the home screen, and removes the data folder when one is
+ * named. "00000000" is a home screen that let the title go.
  */
 #ifndef PS5_BOILERPLATE_SELF_UPDATE_PROTOCOL_H
 #define PS5_BOILERPLATE_SELF_UPDATE_PROTOCOL_H

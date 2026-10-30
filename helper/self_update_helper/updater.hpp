@@ -51,7 +51,18 @@ struct Environment
     // app never replaces (main.cpp asks the console). False, or unset: it can't be told, and nothing
     // is installed.
     std::function<bool(std::string &title)> running_app;
+    // Solanum: where the console's /data is ("/data"; a temporary folder in the host check). A data
+    // folder an uninstall removes is named as /data/<name> and must be one directly in it.
+    std::string data_root = "/data";
+    // Solanum: takes a title off the home screen (the console's app-install service, main.cpp). 0:
+    // done; anything else is the service's code. Unset: it can't be asked.
+    std::function<int(const std::string &title)> unregister;
 };
+
+// Solanum: whether `path` ("/data/<name>") may be removed as an app's data folder: one folder
+// directly in /data, named with letters, digits, '.', '_' and '-' (not starting with '.'), and not
+// one the console, the HEN, ShadowMountPlus or Solanum keeps (homebrew, etaHEN, solanum...).
+bool data_folder_allowed(const std::string &path);
 
 // The console's drives ("/data", "/mnt/ext0", "/mnt/ext1", "/mnt/usb0" to "/mnt/usb7") and
 // the usual app folders on them (homebrew, etaHEN/games, and an external drive itself).

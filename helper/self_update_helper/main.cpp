@@ -13,10 +13,12 @@
 #include "updater.hpp"
 #include <csignal>
 #include <cstdint>
+#include <string>
 #include <cstdio>
 #include <cstring>
 #include <sys/mount.h>
 #include <sys/param.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 extern "C"
@@ -29,6 +31,10 @@ extern "C"
     __attribute__((weak)) int sceKernelLoadStartModule(const char *path, std::size_t argc, const void *argv,
                                                        std::uint32_t flags, void *option, int *result);
     __attribute__((weak)) int sceKernelDlsym(int module, const char *name, void **address);
+    // Solanum: the payload SDK's lookup of a loaded module's function (ps5/kernel.h), for the
+    // app-install service when sceKernelDlsym can't find it. Weak, as above.
+    __attribute__((weak)) std::intptr_t kernel_dynlib_dlsym(int pid, unsigned int handle, const char *name);
+    __attribute__((weak)) int sceUserServiceInitialize(void *parameters);
 }
 
 namespace
@@ -106,15 +112,72 @@ int main()
         title = id;
         return true;
     };
+    // Solanum: an uninstall takes the app off the home screen as the console's own uninstall does,
+    // through its app-install service (libSceAppInstUtil). As ProsperoStore found, a payload that
+    // imports that library doesn't start on some firmware, so it is loaded by path when an uninstall
+    // asks, and its two functions looked up then. Anything missing is a code, never a crash.
+    environment.unregister = [&environment](const std::string &title) -> int
+    {
+        using Initialize = int (*)();
+        using Uninstall = int (*)(const char *title_id);
+        static Initialize initialize = nullptr;
+        static Uninstall uninstall = nullptr;
+        static int module = -1;
+        if (module < 0)
+        {
+            if (sceKernelLoadStartModule == nullptr)
+                return -2;
+            if (sceUserServiceInitialize != nullptr)
+                (void)sceUserServiceInitialize(nullptr);
+            for (const char *path : {"/system/common/lib/libSceAppInstUtil.sprx", "libSceAppInstUtil.sprx"})
+                if ((module = sceKernelLoadStartModule(path, 0, nullptr, 0, nullptr, nullptr)) >= 0)
+                    break;
+            if (module < 0)
+            {
+                environment.log("libSceAppInstUtil could not be loaded (" + std::to_string(module) + ")");
+                return module;
+            }
+            const auto find = [](const char *name) -> void *
+            {
+                void *address = nullptr;
+                if (sceKernelDlsym != nullptr && sceKernelDlsym(module, name, &address) == 0 && address != nullptr)
+                    return address;
+                if (kernel_dynlib_dlsym != nullptr)
+                    return reinterpret_cast<void *>(
+                        kernel_dynlib_dlsym(getpid(), static_cast<unsigned int>(module), name));
+                return nullptr;
+            };
+            initialize = reinterpret_cast<Initialize>(find("sceAppInstUtilInitialize"));
+            uninstall = reinterpret_cast<Uninstall>(find("sceAppInstUtilAppUnInstall"));
+            environment.log(initialize != nullptr && uninstall != nullptr
+                                ? "sceAppInstUtil found in libSceAppInstUtil"
+                                : "sceAppInstUtil's functions could not be found");
+            if (initialize != nullptr)
+            {
+                const int ready = initialize();
+                if (ready < 0)
+                    environment.log("sceAppInstUtilInitialize answered " + std::to_string(ready));
+            }
+        }
+        if (uninstall == nullptr)
+            return -3;
+        return uninstall(title.c_str());
+    };
     // ProsperoEden: the kernel log, and (Solanum) /data/solanum/logs/updater.log (the last install's
     // lines, for a player to send: the kernel log is out of reach for most).
-    static std::FILE *file = std::fopen("/data/solanum/logs/updater.log", "w");
+    // Solanum: several helpers can work at once (the download queue), so each adds to the log, its
+    // lines marked with its process; a log grown past a megabyte starts again.
+    struct stat log_info
+    {
+    };
+    const bool too_long = stat("/data/solanum/logs/updater.log", &log_info) == 0 && log_info.st_size > (1 << 20);
+    static std::FILE *file = std::fopen("/data/solanum/logs/updater.log", too_long ? "w" : "a");
     environment.log = [](const std::string &line)
     {
         (void)klog_puts(("[self-update] " + line).c_str());
         if (file)
         {
-            std::fprintf(file, "%s\n", line.c_str());
+            std::fprintf(file, "[%d] %s\n", static_cast<int>(getpid()), line.c_str());
             std::fflush(file);
         }
     };

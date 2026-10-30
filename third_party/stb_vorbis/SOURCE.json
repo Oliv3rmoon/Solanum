@@ -1,0 +1,16 @@
+{
+  "name": "stb_vorbis",
+  "version": "1.22",
+  "license": "public domain or MIT (the file's choice; its statements are at its end)",
+  "repository": "https://github.com/nothings/stb.git",
+  "commit": "1ee679ca2ef753a528db5ba6801e1067b40481b8",
+  "note": "stb_vorbis.c at the last commit that changed it (2021-07-12); git blob 3e5c2504c08f76b9d04e4adfbce80818631e835e, SHA-256 in upstream. Modified by solanum-hardening.patch (apply it to the upstream file to get this one): the file vendor and comment parsing of the second header no longer trusts the lengths a file gives. A length or a count that is negative or past 1 MB / 65535 is refused, and a comment list is zeroed and counted as its entries are made. Before it, a damaged header made start_decoder write past a block (len+1 overflowed) or free pointers it had never set; bit-flipped Ogg files crashed the app. src/audiostream.c also gives stb_vorbis one fixed 4 MB block instead of the heap.",
+  "upstream": {
+    "stb_vorbis.c": "4c7cb2ff1f7011e9d67950446b7eb9ca044f2e464d76bfbb0b84dd2e23e65636"
+  },
+  "patch": "solanum-hardening.patch",
+  "files": {
+    "stb_vorbis.c": "d018efb23610b643db79bb44d30d25932f9c1cfdb99b61f102b2bf83b19bcc0b",
+    "solanum-hardening.patch": "a0deafbe1f9cd887ccc6497a4b466916c0638ea3d120dc1365b6af247cab4a6a"
+  }
+}

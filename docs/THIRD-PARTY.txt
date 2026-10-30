@@ -29,6 +29,9 @@ miniz - MIT License - LICENSE-miniz.txt - https://github.com/richgel999/miniz
 QR Code generator 1.8.0 (Project Nayuki) - MIT License - LICENSE-qrcodegen.txt -
   https://github.com/nayuki/QR-Code-generator
 stb_image, stb_truetype (Sean Barrett) - public domain / MIT
+dr_mp3 (David Reid, based on lieff's minimp3) - public domain or MIT-0 - https://github.com/mackron/dr_libs
+stb_vorbis 1.22 (Sean Barrett), with a small patch against damaged headers - public domain or MIT -
+  https://github.com/nothings/stb (both decode the background music; the patch is third_party/stb_vorbis/)
 
 Beside eboot.bin:
 

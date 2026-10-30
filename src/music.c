@@ -14,7 +14,7 @@
 #include "nightshade.h"
 #include "platform/platform.h"
 #include "playlist.h"
-#include "wavstream.h"
+#include "audiostream.h"
 
 #include <SDL2/SDL.h>
 #include <string.h>
@@ -24,7 +24,7 @@
 #define FADE_IN_SECONDS 1.5f /* music coming in */
 #define FADE_OFF_SECONDS 0.4f /* turned off in Settings */
 #define RETRY_US 10000000    /* nothing playable in the folder: look again after this */
-#define MUSIC_STACK (256 * 1024) /* the thread's stack: its blocks and the file reads are on it */
+#define MUSIC_STACK (1024 * 1024) /* the thread's stack: the blocks, the file reads and stb_vorbis's scratch memory */
 
 static struct
 {
@@ -58,13 +58,13 @@ static void refresh(bool shuffle, uint32_t seed, const char *playing)
     if (found < 0)
         np_log("music: can't read %s", M.folder);
     else if (found != before || list.other_audio)
-        np_log("music: %d WAV file%s in %s%s", found, found == 1 ? "" : "s", M.folder,
-               list.other_audio ? " (other audio files are not played: only 16-bit PCM WAV is)" : "");
+        np_log("music: %d music file%s in %s%s", found, found == 1 ? "" : "s", M.folder,
+               list.other_audio ? " (audio files that aren't WAV, MP3 or OGG Vorbis are not played)" : "");
     playlist_start(&list, shuffle, seed, playing);
 }
 
 /* The next file that opens, or NULL when none does (every file is tried once). */
-static WavStream *open_next(bool shuffle, uint32_t seed)
+static AudioStream *open_next(bool shuffle, uint32_t seed)
 {
     if (playlist_at_end(&list))
         refresh(shuffle, seed, NULL);
@@ -73,11 +73,11 @@ static WavStream *open_next(bool shuffle, uint32_t seed)
         const char *name = playlist_next(&list);
         const char *why = "can't be opened";
         char path[NP_PATH_MAX];
-        WavStream *stream;
+        AudioStream *stream;
         if (!name)
             break;
         path_join(path, sizeof(path), M.folder, name);
-        stream = wav_open(path, M.rate, &why);
+        stream = audio_open(path, M.rate, &why);
         if (stream)
         {
             np_log("music: playing %s", name);
@@ -100,7 +100,7 @@ static void publish_running(bool running)
 static int music_thread(void *unused)
 {
     int16_t music[CHUNK * 2], mixed[CHUNK * 2];
-    WavStream *stream = NULL;
+    AudioStream *stream = NULL;
     float level = 0.0f, gain_before = 0.0f;
     bool was_playing = false, applied_shuffle = false, running = false;
     uint64_t retry_at = 0, anchor_us = 0, produced = 0;
@@ -178,11 +178,11 @@ static int music_thread(void *unused)
         size_t got = 0;
         while (stream && got < CHUNK)
         {
-            got += wav_read(stream, music + got * 2, CHUNK - got);
+            got += audio_read(stream, music + got * 2, CHUNK - got);
             if (got < CHUNK)
             {
                 /* the file ended: the next one follows at once */
-                wav_close(stream);
+                audio_close(stream);
                 stream = playing ? open_next(shuffle, seed) : NULL;
             }
         }
@@ -204,11 +204,11 @@ static int music_thread(void *unused)
         if (!playing && level <= 0.0f)
         {
             /* faded out: turned off, or an app is opening */
-            wav_close(stream);
+            audio_close(stream);
             stream = NULL;
         }
     }
-    wav_close(stream);
+    audio_close(stream);
     publish_running(false);
     return 0;
 }

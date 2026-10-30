@@ -23,3 +23,6 @@ tooling/prospero-clang18 text eol=lf
 
 # Patches must keep their exact bytes
 *.patch -text
+
+# The music checks' MP3 and OGG samples (tests/fixtures/music) are bytes, whatever they look like.
+tests/fixtures/music/* binary

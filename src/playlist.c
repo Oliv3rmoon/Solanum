@@ -31,15 +31,15 @@ static bool has_extension(const char *name, const char *const *extensions)
 
 bool playlist_is_track(const char *name)
 {
-    static const char *const WAV[] = {"wav", NULL};
+    static const char *const PLAYED[] = {"wav", "mp3", "ogg", NULL};
     const size_t length = name ? strlen(name) : 0;
     return length > 0 && length < PLAYLIST_NAME && name[0] != '.' && strchr(name, '/') == NULL &&
-           has_extension(name, WAV);
+           has_extension(name, PLAYED);
 }
 
 bool playlist_is_other_audio(const char *name)
 {
-    static const char *const OTHER[] = {"mp3", "ogg", "oga", "opus", "flac", "m4a", "aac", "wma", "aif", "aiff", "mid", NULL};
+    static const char *const OTHER[] = {"oga", "opus", "flac", "m4a", "aac", "wma", "aif", "aiff", "mid", NULL};
     return name && name[0] != '.' && has_extension(name, OTHER);
 }
 

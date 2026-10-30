@@ -1,0 +1,11 @@
+{
+  "name": "dr_mp3",
+  "version": "0.7.4 (the header's own number; unreleased, pinned by commit)",
+  "license": "public domain or MIT-0 (the file's choice; its statements are at its end)",
+  "repository": "https://github.com/mackron/dr_libs.git",
+  "commit": "bad753d5ade4f30e40fcf80a757210b650681f8f",
+  "note": "dr_mp3.h at the last commit that changed it (2026-10-24), unmodified; git blob c81bd9e7045f4685832a81afc980693df612b13f",
+  "files": {
+    "dr_mp3.h": "390e4e0ef0cff80fb86ebf1b461d6947cfa4ed699a4fe107e5a5e69a47db2950"
+  }
+}

@@ -3,24 +3,29 @@
  * SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * usage: music-check <a scratch folder>
+ * usage: music-check <a scratch folder> <tests/fixtures/music>
  *
  *   - the playlist (src/playlist.c): which names are tracks, the folder read (regular WAV files only, other audio
  *     counted), name order with numbers by value, rounds that wrap, shuffles that play every file once before any
  *     plays again and never open a round with the file just played, a changed setting that keeps the song playing,
  *     and an empty folder;
- *   - the WAV reader (src/wavstream.c): mono and stereo at other rates resampled to the output's, the same samples
- *     whatever the size of the reads, chunks before the data, a data length that is wrong or missing, and every
- *     file it must refuse (8, 24 and 32 bits, float, three channels, no data, not a WAV);
+ *   - the file reader (src/audiostream.c): WAV mono and stereo at other rates resampled to the output's, the same
+ *     samples whatever the size of the reads, chunks before the data, a data length that is wrong or missing, and
+ *     every file it must refuse (8, 24 and 32 bits, float, three channels, no data, not a WAV); and MP3 and Ogg
+ *     Vorbis (dr_mp3 and stb_vorbis, with the samples in tests/fixtures/music: tones of 440 Hz, and 880 Hz on the
+ *     right, made with lame and oggenc): their length, each channel's pitch, mono played on both sides, an ID3 tag
+ *     in front, a file cut short, what is not an MP3, a Vorbis stream or a file at all, and Ogg headers that claim
+ *     billions of bytes of comments;
  *   - the mixer (src/mixer.c): the volume curve, fades, the ramp across a block, clipping, and the interface's
  *     sounds mixed in, a flurry of them replacing the one furthest along.
  */
 #define _DEFAULT_SOURCE 1 /* glibc: mkdir under -std=c11 */
 #include "../src/mixer.h"
 #include "../src/playlist.h"
-#include "../src/wavstream.h"
+#include "../src/audiostream.h"
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +34,7 @@
 #include <unistd.h>
 
 static int passed, failed;
-static const char *scratch;
+static const char *scratch, *fixtures;
 
 #define EXPECT(condition, what)                                                                                  \
     do                                                                                                           \
@@ -178,7 +183,7 @@ static size_t read_all(const char *path, int rate, size_t block, int16_t **out)
 {
     size_t total = 0, capacity = 1 << 16;
     int16_t *frames = malloc(capacity * 2 * sizeof(int16_t));
-    WavStream *w = wav_open(path, rate, NULL);
+    AudioStream *w = audio_open(path, rate, NULL);
     *out = frames;
     if (!w || !frames)
         return 0;
@@ -190,13 +195,13 @@ static size_t read_all(const char *path, int rate, size_t block, int16_t **out)
             frames = realloc(frames, capacity * 2 * sizeof(int16_t));
             *out = frames;
         }
-        const size_t n = wav_read(w, frames + total * 2, block);
+        const size_t n = audio_read(w, frames + total * 2, block);
         total += n;
         if (n < block)
             break;
     }
-    EXPECT(wav_read(w, frames, block) == 0, "nothing is read after the end");
-    wav_close(w);
+    EXPECT(audio_read(w, frames, block) == 0, "nothing is read after the end");
+    audio_close(w);
     return total;
 }
 
@@ -325,10 +330,10 @@ static void test_wav(void)
             why = NULL;
             path_in(path, sizeof(path), folder, bad[i].name);
             write_wav(path, bad[i].spec);
-            WavStream *w = wav_open(path, 48000, &why);
+            AudioStream *w = audio_open(path, 48000, &why);
             snprintf(message, sizeof(message), "%s is refused, with a reason", bad[i].name);
             EXPECT(w == NULL && why && why[0], message);
-            wav_close(w);
+            audio_close(w);
         }
     }
     path_in(path, sizeof(path), folder, "garbage.wav");
@@ -340,12 +345,252 @@ static void test_wav(void)
             fclose(f);
     }
     why = NULL;
-    EXPECT(wav_open(path, 48000, &why) == NULL && why, "bytes that are not a WAV file are refused");
+    EXPECT(audio_open(path, 48000, &why) == NULL && why, "bytes that are not a WAV file are refused");
     why = NULL;
     path_in(path, sizeof(path), folder, "missing.wav");
-    EXPECT(wav_open(path, 48000, &why) == NULL && why, "a file that isn't there is refused");
-    EXPECT(wav_open(path, 0, NULL) == NULL, "an output rate of 0 is refused");
-    wav_close(NULL);
+    EXPECT(audio_open(path, 48000, &why) == NULL && why, "a file that isn't there is refused");
+    EXPECT(audio_open(path, 0, NULL) == NULL, "an output rate of 0 is refused");
+    audio_close(NULL);
+}
+
+/* ---------------------------------------------------------------- MP3 and Ogg Vorbis */
+
+/* Rising edges of one channel of interleaved stereo between two frames: a tone's cycles. */
+static int cycles(const int16_t *frames, size_t from, size_t to, int channel)
+{
+    int count = 0;
+    for (size_t i = from + 1; i < to; ++i)
+        count += frames[(i - 1) * 2 + (size_t)channel] < 0 && frames[i * 2 + (size_t)channel] >= 0;
+    return count;
+}
+
+static int peak(const int16_t *frames, size_t count)
+{
+    int top = 0;
+    for (size_t i = 0; i < count * 2; ++i)
+        top = abs(frames[i]) > top ? abs(frames[i]) : top;
+    return top;
+}
+
+static void fixture_path(char *out, size_t size, const char *name)
+{
+    path_in(out, size, fixtures, name);
+}
+
+/* One of the samples: 0.3 s of 440 Hz (and 880 Hz on the right when `stereo`), played at 48 kHz. */
+static void check_sample(const char *name, bool stereo, size_t tolerance)
+{
+    char path[1024], what[200];
+    int16_t *out, *odd;
+    fixture_path(path, sizeof(path), name);
+    const size_t n = read_all(path, 48000, 1000, &out);
+    snprintf(what, sizeof(what), "%s: 0.3 s of sound comes out as about 14400 frames at 48 kHz (got %zu)", name, n);
+    EXPECT(n + tolerance >= 14400 && n <= 14400 + tolerance, what);
+    if (n < 14400 / 2)
+    {
+        free(out);
+        return;
+    }
+    /* the middle 0.2 s, clear of the codec's start and end */
+    const int left = cycles(out, 2400, 12000, 0), right = cycles(out, 2400, 12000, 1);
+    snprintf(what, sizeof(what), "%s: the left channel is 440 Hz (%d cycles in 0.2 s, want 88)", name, left);
+    EXPECT(left >= 85 && left <= 91, what);
+    if (stereo)
+    {
+        snprintf(what, sizeof(what), "%s: the right channel is 880 Hz (%d cycles in 0.2 s, want 176)", name, right);
+        EXPECT(right >= 170 && right <= 182, what);
+    }
+    else
+    {
+        int same = 1;
+        for (size_t i = 0; i < n; ++i)
+            same = same && out[i * 2] == out[i * 2 + 1];
+        snprintf(what, sizeof(what), "%s: mono is played on both sides alike", name);
+        EXPECT(same, what);
+    }
+    snprintf(what, sizeof(what), "%s: the tone is loud (peak %d), not silence and not clipped", name, peak(out, n));
+    EXPECT(peak(out, n) > 8000 && peak(out, n) < 24000, what);
+    /* reads of any size give the same samples as one big read */
+    const size_t n_odd = read_all(path, 48000, 7, &odd);
+    snprintf(what, sizeof(what), "%s: odd-sized reads give the same samples", name);
+    EXPECT(n_odd == n && memcmp(out, odd, n * 4) == 0, what);
+    free(out);
+    free(odd);
+}
+
+static void copy_with_prefix(const char *from, const char *to, const void *prefix, size_t prefix_size, long cut_to)
+{
+    FILE *in = fopen(from, "rb"), *out = fopen(to, "wb");
+    char buffer[8192];
+    size_t got, written = 0;
+    if (!in || !out)
+    {
+        printf("could not copy %s\n", from);
+        return;
+    }
+    fwrite(prefix, 1, prefix_size, out);
+    while ((got = fread(buffer, 1, sizeof(buffer), in)) > 0)
+    {
+        if (cut_to >= 0 && written + got > (size_t)cut_to)
+            got = (size_t)cut_to > written ? (size_t)cut_to - written : 0;
+        fwrite(buffer, 1, got, out);
+        written += got;
+    }
+    fclose(in);
+    fclose(out);
+}
+
+static void test_mp3_and_ogg(void)
+{
+    char folder[1024], from[1024], to[1024];
+    int16_t *whole, *part;
+    const char *why;
+    make_folder("coded", folder, sizeof(folder));
+
+    /* an MP3 is whole frames of 1152 samples (576 in MPEG-2) with the encoder's delay in front, which dr_mp3 may leave
+     * in: up to a tenth of a second more than the tone */
+    check_sample("tones-stereo-44100.mp3", true, 4000);   /* 44.1 kHz stereo MP3, resampled */
+    check_sample("tones-stereo-48000.mp3", true, 4000);   /* the output's own rate */
+    check_sample("tone-mono-22050.mp3", false, 4000);     /* MPEG-2 (22.05 kHz) mono */
+    check_sample("tones-stereo-44100.ogg", true, 400);
+    check_sample("tone-mono-16000.ogg", false, 400);
+
+    /* an ID3v2 tag in front, as music files carry (a title, a picture): skipped, the same sound */
+    {
+        unsigned char tag[10 + 3000];
+        memset(tag, 0, sizeof(tag));
+        memcpy(tag, "ID3\x03\x00\x00\x00\x00\x17\x38", 10); /* version 2.3, a size of 3000 bytes in 7-bit groups */
+        fixture_path(from, sizeof(from), "tones-stereo-44100.mp3");
+        path_in(to, sizeof(to), folder, "tagged.mp3");
+        copy_with_prefix(from, to, tag, sizeof(tag), -1);
+        const size_t plain = read_all(from, 48000, 1000, &whole), tagged = read_all(to, 48000, 1000, &part);
+        EXPECT(plain > 0 && tagged == plain && memcmp(whole, part, plain * 4) == 0, "an ID3v2 tag in front of an MP3 changes nothing");
+        free(whole);
+        free(part);
+    }
+
+    /* the file's kind is told by its name's ending, in any case */
+    fixture_path(from, sizeof(from), "tone-mono-22050.mp3");
+    path_in(to, sizeof(to), folder, "LOUD.MP3");
+    copy_with_prefix(from, to, "", 0, -1);
+    EXPECT(read_all(to, 48000, 1000, &whole) > 10000, ".MP3 in capitals plays");
+    free(whole);
+    fixture_path(from, sizeof(from), "tone-mono-16000.ogg");
+    path_in(to, sizeof(to), folder, "LOUD.OGG");
+    copy_with_prefix(from, to, "", 0, -1);
+    EXPECT(read_all(to, 48000, 1000, &whole) > 10000, ".OGG in capitals plays");
+    free(whole);
+
+    /* cut short: what is there plays, and then it ends */
+    for (int i = 0; i < 2; ++i)
+    {
+        const char *name = i ? "tones-stereo-44100.ogg" : "tones-stereo-44100.mp3";
+        char cut[64], message[200];
+        long size;
+        FILE *f;
+        fixture_path(from, sizeof(from), name);
+        f = fopen(from, "rb");
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        fclose(f);
+        snprintf(cut, sizeof(cut), i ? "cut.ogg" : "cut.mp3");
+        path_in(to, sizeof(to), folder, cut);
+        /* an Ogg file's setup headers take the first 3 KB or so: cut after them, not inside */
+        copy_with_prefix(from, to, "", 0, i ? size * 88 / 100 : size * 6 / 10);
+        const size_t full = read_all(from, 48000, 1000, &whole), some = read_all(to, 48000, 1000, &part);
+        snprintf(message, sizeof(message), "%s cut short plays part of it (%zu of %zu frames) and ends", name, some, full);
+        EXPECT(some > full / 5 && some < full, message);
+        free(whole);
+        free(part);
+    }
+
+    /* what is not an MP3, not Vorbis, or nothing */
+    {
+        struct
+        {
+            const char *name;
+            const char *kind;
+        } bad[] = {{"garbage.mp3", "bytes that are not an MP3"}, {"garbage.ogg", "bytes that are not Ogg"},
+                   {"empty.mp3", "an empty .mp3"}, {"empty.ogg", "an empty .ogg"}};
+        for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
+        {
+            char message[200];
+            FILE *f;
+            path_in(to, sizeof(to), folder, bad[i].name);
+            f = fopen(to, "wb");
+            for (int k = 0; f && i < 2 && k < 3000; ++k)
+                fputc((k * 31 + 7) ^ (k >> 3), f);
+            if (f)
+                fclose(f);
+            why = NULL;
+            snprintf(message, sizeof(message), "%s is refused, with a reason", bad[i].kind);
+            AudioStream *w = audio_open(to, 48000, &why);
+            EXPECT(w == NULL && why && why[0], message);
+            audio_close(w);
+        }
+        fixture_path(from, sizeof(from), "tone-opus.ogg"); /* Opus in an Ogg file: not Vorbis */
+        why = NULL;
+        AudioStream *w = audio_open(from, 48000, &why);
+        EXPECT(w == NULL && why && why[0], "Opus in an Ogg file is refused: it is not Vorbis");
+        audio_close(w);
+        path_in(to, sizeof(to), folder, "nothing.mp3");
+        why = NULL;
+        EXPECT(audio_open(to, 48000, &why) == NULL && why, "an .mp3 that isn't there is refused");
+        path_in(to, sizeof(to), folder, "nothing.ogg");
+        why = NULL;
+        EXPECT(audio_open(to, 48000, &why) == NULL && why, "an .ogg that isn't there is refused");
+    }
+}
+
+/* A damaged Ogg header: the second header (the comment header, "\x03vorbis") says its vendor string, or its comments, are
+ * billions of bytes long. stb_vorbis once trusted that: its length + 1 overflowed and it wrote past the block, or it
+ * freed what it had never made. Every such file is refused, and nothing crashes under the sanitizers. */
+static void test_damaged_ogg_header(void)
+{
+    char from[1024], to[1024], message[200];
+    static unsigned char bytes[16384];
+    size_t size, at = 0, vendor;
+    FILE *f;
+    fixture_path(from, sizeof(from), "tones-stereo-44100.ogg");
+    f = fopen(from, "rb");
+    size = f ? fread(bytes, 1, sizeof(bytes), f) : 0;
+    if (f)
+        fclose(f);
+    while (at + 7 < size && memcmp(bytes + at, "\x03vorbis", 7) != 0)
+        ++at;
+    EXPECT(at + 16 < size, "the sample's comment header is where the Ogg format puts it");
+    if (at + 16 >= size)
+        return;
+    vendor = (size_t)bytes[at + 7] | (size_t)bytes[at + 8] << 8;
+    const struct
+    {
+        size_t offset; /* of a 32-bit little-endian length or count */
+        unsigned long value;
+        const char *what;
+    } damage[] = {{at + 7, 0xFFFFFFFFul, "a vendor string of 4 GB - 1"},
+                  {at + 7, 0x7FFFFFFFul, "a vendor string of 2 GB - 1"},
+                  {at + 7, 0x40000000ul, "a vendor string of 1 GB"},
+                  {at + 11 + vendor, 0xFFFFFFFFul, "4 billion comments"},
+                  {at + 11 + vendor, 0x7FFFFFFFul, "2 billion comments"},
+                  {at + 11 + vendor, 0x00100000ul, "a million comments"},
+                  {at + 15 + vendor, 0xFFFFFFFFul, "a comment of 4 GB - 1"},
+                  {at + 15 + vendor, 0x7FFFFFFFul, "a comment of 2 GB - 1"}};
+    for (size_t i = 0; i < sizeof(damage) / sizeof(damage[0]); ++i)
+    {
+        unsigned char copy[16384];
+        const char *why = NULL;
+        memcpy(copy, bytes, size);
+        for (int k = 0; k < 4; ++k)
+            copy[damage[i].offset + (size_t)k] = (unsigned char)(damage[i].value >> (8 * k));
+        snprintf(to, sizeof(to), "%s/damaged%zu.ogg", scratch, i);
+        f = fopen(to, "wb");
+        fwrite(copy, 1, size, f);
+        fclose(f);
+        AudioStream *w = audio_open(to, 48000, &why);
+        snprintf(message, sizeof(message), "an Ogg file that says it has %s is refused", damage[i].what);
+        EXPECT(w == NULL && why && why[0], message);
+        audio_close(w);
+    }
 }
 
 /* ---------------------------------------------------------------- the mixer */
@@ -452,7 +697,10 @@ static void test_playlist_names(void)
     EXPECT(playlist_is_track("song.wav") && playlist_is_track("Song.WAV") && playlist_is_track("a b.Wav") &&
                playlist_is_track("1.wav"),
            "a .wav file in any case is a track");
-    EXPECT(!playlist_is_track("song.mp3") && !playlist_is_track("song.ogg") && !playlist_is_track("song.wav.txt") &&
+    EXPECT(playlist_is_track("song.mp3") && playlist_is_track("Song.MP3") && playlist_is_track("song.ogg") &&
+               playlist_is_track("a.OGG"),
+           "an .mp3 or .ogg file in any case is a track too");
+    EXPECT(!playlist_is_track("song.flac") && !playlist_is_track("song.mp3.txt") && !playlist_is_track("song.wav.txt") &&
                !playlist_is_track("song") && !playlist_is_track("wav") && !playlist_is_track(".wav") &&
                !playlist_is_track("song.wave") && !playlist_is_track(""),
            "anything else is not");
@@ -467,8 +715,9 @@ static void test_playlist_names(void)
         memcpy(longest + PLAYLIST_NAME - 4, ".wav", 5);
         EXPECT(!playlist_is_track(longest), "a name that doesn't fit is not");
     }
-    EXPECT(playlist_is_other_audio("a.mp3") && playlist_is_other_audio("a.OGG") && playlist_is_other_audio("a.flac") &&
-               !playlist_is_other_audio("a.wav") && !playlist_is_other_audio("a.txt") && !playlist_is_other_audio("._a.mp3"),
+    EXPECT(playlist_is_other_audio("a.flac") && playlist_is_other_audio("a.M4A") && playlist_is_other_audio("a.opus") &&
+               !playlist_is_other_audio("a.wav") && !playlist_is_other_audio("a.mp3") && !playlist_is_other_audio("a.ogg") &&
+               !playlist_is_other_audio("a.txt") && !playlist_is_other_audio("._a.flac"),
            "audio Solanum can't decode is told apart");
 
     {
@@ -479,7 +728,7 @@ static void test_playlist_names(void)
         playlist_clear(&p);
         for (size_t i = 0; i < sizeof(added) / sizeof(added[0]); ++i)
             playlist_add(&p, added[i]);
-        EXPECT(!playlist_add(&p, "2.wav") && !playlist_add(&p, "x.mp3") && p.count == 8, "a name already listed, or not a track, is not added");
+        EXPECT(!playlist_add(&p, "2.wav") && !playlist_add(&p, "x.flac") && p.count == 8, "a name already listed, or not a track, is not added");
         playlist_sort(&p);
         for (int i = 0; i < 8; ++i)
             in_order = in_order && strcmp(p.names[i], want[i]) == 0;
@@ -502,14 +751,18 @@ static void test_playlist_folder(void)
     touch(folder, ".hidden.wav");
     touch(folder, "._a.wav");
     touch(folder, "notes.txt");
+    touch(folder, "e.flac");
+    touch(folder, "f.M4A");
     path_in(path, sizeof(path), folder, "folder.wav");
     mkdir(path, 0777);
     memset(name, 'n', 140);
     strcpy(name + 140, ".wav");
     touch(folder, name);
-    EXPECT(playlist_scan(&p, folder) == 2, "a folder gives its regular WAV files: two of nine entries here");
-    EXPECT(p.count == 2 && strcmp(p.names[0], "a.WAV") == 0 && strcmp(p.names[1], "b.wav") == 0, "they come sorted");
-    EXPECT(p.other_audio == 2, "the .mp3 and .ogg are counted as audio that isn't played");
+    EXPECT(playlist_scan(&p, folder) == 4, "a folder gives its regular WAV, MP3 and OGG files: four of eleven entries here");
+    EXPECT(p.count == 4 && strcmp(p.names[0], "a.WAV") == 0 && strcmp(p.names[1], "b.wav") == 0 &&
+               strcmp(p.names[2], "c.mp3") == 0 && strcmp(p.names[3], "d.ogg") == 0,
+           "they come sorted, whatever their kind");
+    EXPECT(p.other_audio == 2, "the .flac and .M4A are counted as audio that isn't played");
     EXPECT(playlist_scan(&p, "/nonexistent/solanum-music") == -1 && p.count == 0, "a folder that can't be read is -1 and an empty list");
 
     make_folder("many", folder, sizeof(folder));
@@ -712,13 +965,16 @@ static void test_playlist_setting_change(void)
 
 int main(int argc, char **argv)
 {
-    if (argc < 2)
+    if (argc < 3)
     {
-        fprintf(stderr, "usage: music-check <a scratch folder>\n");
+        fprintf(stderr, "usage: music-check <a scratch folder> <tests/fixtures/music>\n");
         return 2;
     }
     scratch = argv[1];
+    fixtures = argv[2];
     test_wav();
+    test_mp3_and_ogg();
+    test_damaged_ogg_header();
     test_mixer();
     test_playlist_names();
     test_playlist_folder();

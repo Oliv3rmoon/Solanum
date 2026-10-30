@@ -93,7 +93,7 @@ test: host-checks test-unit test-integration test-elevation test-update-check te
 
 # Solanum's own host checks (tests/test_store.py): the catalog, the release's file, checksums, resuming, where an
 # app is, the launch payload's conversation, the hidden ones, and the install helper's whole conversation; its own
-# update's release decision (tests/test_update_release.py); and the background music's playlist, WAV reader and mixer
+# update's release decision (tests/test_update_release.py); and the background music's playlist, file reader and mixer
 # (tests/test_music.py). None needs the PS5 SDK.
 .PHONY: host-checks
 host-checks:

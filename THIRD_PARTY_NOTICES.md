@@ -22,6 +22,8 @@
 | [Microsoft DirectXTex](https://github.com/microsoft/DirectXTex) | `texconv` presentation-image preparation |
 | [FFmpeg](https://ffmpeg.org/) | Developer-supplied selection-audio preparation |
 | [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) | Directory-style deployment and hardware validation |
+| [mackron/dr_libs](https://github.com/mackron/dr_libs) (David Reid), dr_mp3 | The MP3 decoder of the background music (public domain or MIT-0), based on minimp3 by lieff |
+| [nothings/stb](https://github.com/nothings/stb) (Sean Barrett), stb_vorbis | The Ogg Vorbis decoder of the background music (public domain or MIT) |
 | [ArkSama/PS5-Lapy-JB-Daemon](https://github.com/ArkSama/PS5-Lapy-JB-Daemon) | Original Lapy project and owned-root design |
 | [mpereiraesaa/PS5-Lapy-JB-Daemon](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon) | Exact-title one-shot helper and cooperative elevation protocol |
 
@@ -131,6 +133,27 @@ code (GPL-3.0-or-later), taken from the ProsperoStore project.
 library for C, version 1.8.0 (`qrcodegen.c`, `qrcodegen.h`), MIT, unmodified, with its licence as `LICENSE`.
 Solanum compiles it into `src/vendor.c` to draw the QR code to an app's source on its page, and the app folder
 carries its licence as `licenses/LICENSE-qrcodegen.txt`.
+
+## Vendored audio decoders
+
+The background music decodes MP3 and Ogg Vorbis files with two single-file libraries, compiled into `src/codecs.c`
+(WAV is read by Solanum's own code, `src/audiostream.c`). Each file carries its licence statements, a choice of
+public domain or a permissive licence, and `SOURCE.json` beside it records where it came from and its SHA-256:
+
+- `third_party/dr_libs/dr_mp3.h`: [dr_mp3](https://github.com/mackron/dr_libs) by David Reid, v0.7.4 (the header's own
+  number; it has no release), commit `bad753d5ade4f30e40fcf80a757210b650681f8f`, public domain or MIT-0, unmodified.
+  It is based on [minimp3](https://github.com/lieff/minimp3) by lieff (CC0).
+- `third_party/stb_vorbis/stb_vorbis.c`: [stb_vorbis](https://github.com/nothings/stb) by Sean Barrett, v1.22, commit
+  `1ee679ca2ef753a528db5ba6801e1067b40481b8`, public domain or MIT, **with one patch**
+  (`solanum-hardening.patch`, which applied to the upstream file gives the vendored one). Upstream trusts the vendor
+  string's and the comments' lengths in an Ogg file's second header: a damaged file made it write past a block or free
+  pointers it had never set, and bit-flipped Ogg files crashed Solanum. The patch refuses lengths and counts that are
+  negative or implausible (past 1 MB, or 65,535 comments) and frees only the comments that exist. Solanum also gives
+  the decoder one fixed 4 MB block of memory instead of the heap. Nothing else in it is changed, and the patch is
+  Solanum's, under the file's own terms.
+
+`tests/fixtures/music/` holds a few seconds of generated tones (0.3 s each) in MP3 and Ogg Vorbis, for the host checks;
+they are test data, never shipped (`README.txt` there says how they were made).
 
 ## Optional UFS2Tool dependency
 

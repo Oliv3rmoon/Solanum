@@ -87,8 +87,8 @@ jobs:
       # download that isn't the release's is never unpacked), resuming, roll backs from kept ZIPs, holds and skips,
       # where an app is, the launch payload's conversation, the Konami code and the random tips and eggs
       # (tests/store_check.c); the install helper's whole conversation, installs on any drive and uninstalls
-      # (tests/helper_check.cpp); Solanum's own update's release decision; the background music's playlist, WAV reader
-      # and mixer (tests/music_check.c); and the translations (tests/test_i18n.py).
+      # (tests/helper_check.cpp); Solanum's own update's release decision; the background music's playlist, file reader
+      # (WAV, MP3, OGG) and mixer (tests/music_check.c); and the translations (tests/test_i18n.py).
       - name: Host checks
         env:
           CC: clang-18

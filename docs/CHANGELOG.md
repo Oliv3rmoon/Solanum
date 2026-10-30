@@ -4,19 +4,24 @@
 
 Background music: your own files, played behind the store.
 
-- **Background music.** Put WAV files in `/data/solanum/music` (Solanum makes the folder) and they play one after
-  another behind the store. Settings > Interface has **Background music** (on or off), **Shuffle music** and **Music
+- **Background music.** Put WAV, MP3 or OGG files in `/data/solanum/music` (Solanum makes the folder) and they play
+  one after another behind the store. Settings > Interface has **Background music** (on or off), **Shuffle music** and **Music
   volume** (10 to 100 %). The music fades in, and fades out as an app opens, so the app starts in silence.
 - **The order.** Without shuffle, the files play in the order of their names, numbers by value (`2.wav` before
   `10.wav`). Shuffled, every file plays once before any plays again, and a new round never opens with the file
   just played. Changing the setting mid-song keeps that song playing. The folder is read again each time the list
   comes round and when music is switched on, so files copied meanwhile are played; with none, switching it on says so.
-- **What it plays.** 16-bit PCM WAV files, mono or stereo, 8 to 192 kHz: what Solanum's audio already decodes. A
-  file is read as it plays, not loaded whole, and a file that can't be played is skipped with a line in the log.
-  MP3 and OGG files are left alone.
+- **What it plays.** WAV (16-bit PCM), MP3 and Ogg Vorbis files, mono or stereo, at any sample rate (8 to 192 kHz;
+  MP3 up to 48), each converted as it plays to the console's 16-bit stereo at 48 kHz. A file is decoded as it plays,
+  not loaded whole, and a file that can't be played is skipped with a line in the log. FLAC, M4A and the like are
+  left alone. The decoders are [dr_mp3](https://github.com/mackron/dr_libs) and
+  [stb_vorbis](https://github.com/nothings/stb), vendored in `third_party/`; stb_vorbis carries a small patch,
+  because a damaged Ogg header could make it write past a block (a bit-flipped file crashed the app), and gets one
+  fixed block of memory instead of the heap.
 - **A thread of its own** keeps the console's audio queue 64 ms ahead, so a slow frame of the interface never cuts
   the music, and the interface's clicks are mixed into it instead of queued beside it.
-- The settings are in all ten languages, and `tests/music_check.c` checks the playlist, the WAV reader and the mixer.
+- The settings are in all ten languages, and `tests/music_check.c` checks the playlist, the file reader (WAV, MP3
+  and OGG, from small samples in `tests/fixtures/music`, and Ogg headers that claim billions of bytes) and the mixer.
 
 ## 0.2.0
 

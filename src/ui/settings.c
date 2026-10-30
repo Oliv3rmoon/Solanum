@@ -86,15 +86,16 @@ static const Row INTERFACE_ROWS[] = {
      N(UI_SOUNDS), NULL, A_NONE},
     {"Interface volume", "How loud those clicks are.", K_CHOICE, FIELD(ui_volume), UI_VOLUMES, N(UI_VOLUMES), NULL,
      A_NONE},
-    {"Background music", "Plays the WAV files you put in /data/solanum/music behind the store, one after another, and "
-                         "fades out when an app opens.",
+    {"Background music", "Plays the music files you put in /data/solanum/music (WAV, MP3 or OGG) behind the store, one "
+                         "after another, and fades out when an app opens.",
      K_TOGGLE, FIELD(music), NULL, 0, NULL, A_NONE},
     {"Shuffle music", "Plays the files in a random order, every one once before any plays again. Off plays them in "
                       "the order of their names.",
      K_TOGGLE, FIELD(music_shuffle), NULL, 0, NULL, A_NONE},
     {"Music volume", "How loud the music is. The interface sounds keep their own volume.", K_CHOICE,
      FIELD(music_volume), MUSIC_VOLUMES, N(MUSIC_VOLUMES), MUSIC_VOLUME_VALUES, A_NONE},
-    {"Music files go in /data/solanum/music: WAV, 16-bit PCM, mono or stereo. MP3 and OGG files are not played.",
+    {"Music files go in /data/solanum/music: WAV (16-bit PCM), MP3 or OGG Vorbis, mono or stereo, at any rate. Other "
+     "kinds are not played.",
      NULL, K_INFO, 0, NULL, 0, NULL, A_NONE},
     {"A USB keyboard works too: arrows move, Enter chooses, Escape goes back, Tab changes tab, / searches.", NULL,
      K_INFO, 0, NULL, 0, NULL, A_NONE},
@@ -223,7 +224,7 @@ static void changed(const Row *r)
     app_apply_settings();
     /* switching music on with nothing to play would otherwise do nothing at all */
     if (r->kind == K_TOGGLE && r->field == FIELD(music) && app.settings.music && music_available() == 0)
-        app_toast("There are no WAV files in /data/solanum/music yet.");
+        app_toast("There are no music files in /data/solanum/music yet.");
 }
 
 static void run_action(int action)

@@ -1,10 +1,10 @@
 /*
- * Solanum - background music: the WAV files in /data/solanum/music, played behind the store.
+ * Solanum - background music: the files (WAV, MP3, OGG) in /data/solanum/music, played behind the store.
  * SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * A thread of its own keeps the console's audio queue a few tens of milliseconds ahead, reading each file as it plays
- * (wavstream.h) in the order the playlist gives (playlist.h), so a slow frame of the interface never cuts the music.
+ * (audiostream.h) in the order the playlist gives (playlist.h), so a slow frame of the interface never cuts the music.
  * While music plays, the interface's sounds are mixed into its blocks (mixer.h) instead of queued beside it.
  */
 #ifndef SOLANUM_MUSIC_H
@@ -26,7 +26,7 @@ void music_configure(bool on, bool shuffle, int volume_percent);
 /* Opening an app: the music fades to silence in `milliseconds` and stays silent. */
 void music_fade_out(int milliseconds);
 
-/* The WAV files the folder holds now, read right away; -1 when the folder can't be read. */
+/* The music files the folder holds now, read right away; -1 when the folder can't be read. */
 int music_available(void);
 
 /* An interface sound, to mix into the music: `frames` (interleaved stereo, valid for the rest of the run) at `gain`.

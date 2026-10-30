@@ -1,0 +1,63 @@
+--- a/stb_vorbis.c	2026-10-30 10:10:53
++++ b/stb_vorbis.c	2026-10-30 10:10:53
+@@ -3582,6 +3582,7 @@
+    uint8 header[6], x,y;
+    int len,i,j,k, max_submaps = 0;
+    int longest_floorlist=0;
++   int cx; // SOLANUM: a byte of a comment, or EOP
+ 
+    // first page, first packet
+    f->first_decode = TRUE;
+@@ -3650,30 +3651,41 @@
+    if (!vorbis_validate(header))                    return error(f, VORBIS_invalid_setup);
+    //file vendor
+    len = get32_packet(f);
++   if (len < 0 || len > 0xFFFFF)                    return error(f, VORBIS_invalid_setup); // SOLANUM: len+1 overflowed
+    f->vendor = (char*)setup_malloc(f, sizeof(char) * (len+1));
+    if (f->vendor == NULL)                           return error(f, VORBIS_outofmem);
+    for(i=0; i < len; ++i) {
+-      f->vendor[i] = get8_packet(f);
++      cx = get8_packet(f);
++      if (cx == EOP)                                return error(f, VORBIS_invalid_setup); // SOLANUM: not past the packet
++      f->vendor[i] = (char)cx;
+    }
+    f->vendor[len] = (char)'\0';
+    //user comments
+-   f->comment_list_length = get32_packet(f);
+-   f->comment_list = NULL;
+-   if (f->comment_list_length > 0)
+-   {
+-      f->comment_list = (char**) setup_malloc(f, sizeof(char*) * (f->comment_list_length));
++   // SOLANUM: the list is zeroed and counted as its entries are made, so a failure partway frees only what exists
++   i = get32_packet(f);
++   f->comment_list_length = 0;
++   f->comment_list = NULL;
++   if (i < 0 || i > 0xFFFF)                         return error(f, VORBIS_invalid_setup);
++   if (i > 0)
++   {
++      f->comment_list = (char**) setup_malloc(f, sizeof(char*) * i);
+       if (f->comment_list == NULL)                  return error(f, VORBIS_outofmem);
++      memset(f->comment_list, 0, sizeof(char*) * i);
+    }
+ 
+-   for(i=0; i < f->comment_list_length; ++i) {
++   for(k=0; k < i; ++k) {
+       len = get32_packet(f);
+-      f->comment_list[i] = (char*)setup_malloc(f, sizeof(char) * (len+1));
+-      if (f->comment_list[i] == NULL)               return error(f, VORBIS_outofmem);
++      if (len < 0 || len > 0xFFFFF)                 return error(f, VORBIS_invalid_setup);
++      f->comment_list[k] = (char*)setup_malloc(f, sizeof(char) * (len+1));
++      if (f->comment_list[k] == NULL)               return error(f, VORBIS_outofmem);
++      f->comment_list_length = k+1;
+ 
+       for(j=0; j < len; ++j) {
+-         f->comment_list[i][j] = get8_packet(f);
++         cx = get8_packet(f);
++         if (cx == EOP)                             return error(f, VORBIS_invalid_setup);
++         f->comment_list[k][j] = (char)cx;
+       }
+-      f->comment_list[i][len] = (char)'\0';
++      f->comment_list[k][len] = (char)'\0';
+    }
+ 
+    // framing_flag

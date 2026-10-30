@@ -3,10 +3,10 @@
  * SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * The player puts WAV files in /data/solanum/music. They play one after another, in the order of their names (numbers
- * in a name count by value: 2 before 10), or shuffled: every file once before any plays again, and never the file
- * just played twice in a row. The folder is read again each time the list comes round, so a file added meanwhile is
- * played in the next round. Plain C11 with no console calls, so the host test builds it alone (tests/music_check.c).
+ * The player puts music files (WAV, MP3 or OGG) in /data/solanum/music. They play one after another, in the order of
+ * their names (numbers in a name count by value: 2 before 10), or shuffled: every file once before any plays again,
+ * and never the file just played twice in a row. The folder is read again each time the list comes round, so a file
+ * added meanwhile is played in the next round. Plain C11 with no console calls, so the host test builds it alone (tests/music_check.c).
  * Not thread-safe: the music's thread owns its playlist.
  */
 #ifndef SOLANUM_PLAYLIST_H
@@ -27,13 +27,13 @@ typedef struct
     bool shuffle;
     uint32_t rng;
     char last[PLAYLIST_NAME]; /* the file handed out last, kept when the folder is read again */
-    int other_audio;          /* the last scan's audio files that are not WAV (.mp3, .ogg...): not played */
+    int other_audio;          /* the last scan's audio files of kinds that can't be decoded (.flac, .m4a...): not played */
 } Playlist;
 
-/* Whether a file name is one the player plays: ends in .wav in any case, is not hidden (no leading dot, which also
- * leaves out the "._song.wav" copies a Mac leaves on a drive), and fits. */
+/* Whether a file name is one the player plays: ends in .wav, .mp3 or .ogg in any case, is not hidden (no leading
+ * dot, which also leaves out the "._song.wav" copies a Mac leaves on a drive), and fits. */
 bool playlist_is_track(const char *name);
-/* An audio file this player can't decode (.mp3, .ogg, .flac, .m4a...). */
+/* An audio file this player can't decode (.flac, .m4a, .opus...). */
 bool playlist_is_other_audio(const char *name);
 
 /* Forgets the files (not the last one handed out). */
@@ -42,7 +42,8 @@ void playlist_clear(Playlist *p);
 bool playlist_add(Playlist *p, const char *name);
 /* Name order, case ignored, numbers by value ("2.wav" before "10.wav"). */
 void playlist_sort(Playlist *p);
-/* Reads a folder: its regular files that are tracks, sorted. Returns how many, or -1 when it can't be read. */
+/* Reads a folder: its regular files that are tracks (WAV, MP3, OGG), sorted. Returns how many, or -1 when it can't
+ * be read. */
 int playlist_scan(Playlist *p, const char *folder);
 
 /* Makes the play order. `playing` is the file playing now, or NULL: it stays first (shuffled) or the order goes on

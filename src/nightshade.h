@@ -94,6 +94,8 @@ typedef struct
     bool music;         /* play the WAV files in the music folder behind the store */
     bool music_shuffle; /* in a random order, every file once before any repeats; else in the order of their names */
     int music_volume;   /* 10..100 % in steps of 10 */
+    /* 0.4.0 */
+    bool community_seen; /* the community's card was closed (community.h): it isn't shown again */
 } Settings;
 
 /* Data layout below the data folder (NP_DATA on the console). */

@@ -88,12 +88,15 @@ jobs:
       # where an app is, the launch payload's conversation, the Konami code and the random tips and eggs
       # (tests/store_check.c); the install helper's whole conversation, installs on any drive and uninstalls
       # (tests/helper_check.cpp); Solanum's own update's release decision; the background music's playlist, file reader
-      # (WAV, MP3, OGG) and mixer (tests/music_check.c); and the translations (tests/test_i18n.py).
+      # (WAV, MP3, OGG) and mixer (tests/music_check.c); the translations (tests/test_i18n.py); and the community's QR
+      # code, read back as a phone does, and its card (tests/community_check.c).
       - name: Host checks
         env:
           CC: clang-18
           CXX: clang++-18
-        run: python3 -m unittest tests.test_store tests.test_update_release tests.test_music tests.test_i18n -v
+        run: >-
+          python3 -m unittest tests.test_store tests.test_update_release tests.test_music tests.test_i18n
+          tests.test_community -v
 
       - name: Build
         env:

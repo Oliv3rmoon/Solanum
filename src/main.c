@@ -8,10 +8,12 @@
  * and opens them. The app: start-up, the main loop, and what the screens share (app.h). Its platform layer, its
  * Vulkan screen, its interface primitives and its own update come from Dulcamara, which has them from Mandrake
  * (formerly Nightshade Station: darkxex's SwanStationPS5 on BlackBearReloaded's ps5-native-app-boilerplate); its
- * installs and its Open button are Nightshade's Settings > Apps (store.h).
+ * installs and its Open button are Nightshade's Settings > Apps (store.h). Once, a card names the community, nightly
+ * on Discord (community.h).
  */
 #include "app.h"
 
+#include "community.h"
 #include "config.h"
 #include "i18n.h"
 #include "music.h"
@@ -20,6 +22,7 @@
 #include "platform/vk/vk_probe.h"
 #include "ui/draw.h"
 #include "ui/icons.h"
+#include "ui/keyboard.h"
 #include "ui/overlay.h"
 #include "ui/sfx.h"
 #include "ui/text.h"
@@ -595,6 +598,43 @@ static void make_folders(void)
                  app.paths.root, app.sandbox_reason[0] ? app.sandbox_reason : "no reason given");
 }
 
+/* The community's card (community.h): once, at the first start where it can be kept closed, a moment after the
+ * catalog is on screen with nothing over it. Any of the QR card's buttons closes it, for good. */
+static void community_card(uint64_t since_open)
+{
+    static int state; /* 0 not yet, 1 open, 2 closed (or not due) */
+    static uint8_t code[COMMUNITY_QR_BYTES];
+    if (state == 0)
+    {
+        if (!community_card_due(&app.settings, !app.storage_error[0]))
+        {
+            state = 2;
+            return;
+        }
+        const CatalogState catalog = store_catalog_state();
+        const bool shown = catalog == CATALOG_READY || catalog == CATALOG_COPY;
+        if (since_open < 1500000 || app.screen != SCREEN_STORE || !shown || overlay_active() || box_open ||
+            keyboard_active())
+            return;
+        if (!community_qr(code))
+        {
+            state = 2;
+            return;
+        }
+        char caption[400];
+        community_caption(caption, sizeof(caption), true);
+        qr_show(code, caption);
+        np_log("community: the card names %s, %s", COMMUNITY_NAME, COMMUNITY_URL);
+        state = 1;
+    }
+    else if (state == 1 && !overlay_active())
+    {
+        community_card_closed(&app.settings);
+        app_save_settings();
+        state = 2;
+    }
+}
+
 /* The catalog's text beyond Latin-1 (curly quotes, dashes, other scripts) into the font atlases. */
 static void want_text(void)
 {
@@ -727,6 +767,7 @@ int main(int argc, char **argv)
 
         store_lock();
         want_text();
+        community_card(now - opened);
         plat_begin_frame(0);
         static const char *const names[SCREEN_COUNT] = {"store", "page", "settings"};
         ps5_crash_step(names[app.screen]);

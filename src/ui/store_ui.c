@@ -2,11 +2,13 @@
  * Solanum - the store's tabs (L1 / R1): Browse (categories, the Nightshade family first, and search), Updates
  * (each installed app with a newer release, its changelog beside it), Installed (where each app lives and how
  * big it is) and About. The catalog's loading screen, with one of its tips; and two hidden ways to one of its
- * hidden lines: the Konami code on Browse, and the About page's version line pressed seven times.
+ * hidden lines: the Konami code on Browse, and the About page's version line pressed seven times. About also names
+ * the community, nightly on Discord, with its address and a QR code that opens it (community.h).
  * SPDX-FileCopyrightText: Copyright 2026 Oliv3rmoon
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "../app.h"
+#include "../community.h"
 #include "../i18n.h"
 #include "../platform/platform.h"
 #include "../custom.h"
@@ -873,9 +875,34 @@ static void downloads(uint32_t pressed)
 
 /* ---------------------------------------------------------------- About */
 
+/* A QR code on a white square: page.c's small one. */
+static void draw_code(const uint8_t *qr, float x, float y, float side)
+{
+    const int size = qrcodegen_getSize(qr), quiet = 2;
+    const float cell = side / (float)(size + 2 * quiet);
+    draw_rrect(x - 4, y - 4, side + 8, side + 8, 8, 0xffffffffu);
+    for (int row = 0; row < size; ++row)
+        for (int col = 0; col < size; ++col)
+            if (qrcodegen_getModule(qr, col, row))
+                draw_rect(floorf(x + (col + quiet) * cell), floorf(y + (row + quiet) * cell), ceilf(cell), ceilf(cell),
+                          0xff000000u);
+}
+
 static void about(uint32_t pressed)
 {
     const Catalog *catalog = store_catalog();
+    /* the community's code, made the first time About is shown */
+    static uint8_t community[COMMUNITY_QR_BYTES];
+    static int community_made; /* 1 made, -1 it couldn't be */
+    if (!community_made)
+        community_made = community_qr(community) ? 1 : -1;
+    if ((pressed & BIT(BTN_TRIANGLE)) && community_made > 0)
+    {
+        sfx_play(SFX_SELECT);
+        char caption[400];
+        community_caption(caption, sizeof(caption), false);
+        qr_show(community, caption);
+    }
     /* The version line, pressed seven times: one of the catalog's hidden lines. */
     if (pressed & BIT(BTN_CROSS))
     {
@@ -918,16 +945,26 @@ static void about(uint32_t pressed)
                          ALIGN_LEFT, y + 530, 0, &total);
         ly += total * 25 * 1.42f + 18;
     }
-    /* the catalog's footer */
+    /* under the card at the right, the community: its label, nightly, its address, and its code (Triangle: larger) */
+    const char *community_texts[COMMUNITY_ABOUT_TEXTS];
+    community_about(community_texts);
+    const float qs = 130, qx = x + w - qs, qy = y + 566, tx = qx - 32, room = 460;
+    if (community_made > 0)
+        draw_code(community, qx, qy, qs);
+    text_draw_fit(tx, qy + 2, 20, FONT_BOLD, TH_FOCUS, ALIGN_RIGHT, room, community_texts[0]);
+    text_draw(tx, qy + 30, 36, FONT_BOLD, TH_TEXT, ALIGN_RIGHT, community_texts[1]);
+    text_draw(tx, qy + 84, 24, FONT_REGULAR, TH_TEXT_SOFT, ALIGN_RIGHT, community_texts[2]);
+    /* the catalog's footer, in the room left of it */
     if (catalog->about_footer[0])
     {
-        draw_rect(plat_width() * 0.5f - 40, y + 574, 80, 2, TH_FOCUS);
-        app_draw_wrapped(catalog->about_footer, x, y + 592, w, 24, FONT_REGULAR, TH_TEXT_DIM, ALIGN_CENTER, y + 660,
+        const float fw = tx - room - 40 - x;
+        draw_rect(x + fw * 0.5f - 40, y + 574, 80, 2, TH_FOCUS);
+        app_draw_wrapped(catalog->about_footer, x, y + 592, fw, 24, FONT_REGULAR, TH_TEXT_DIM, ALIGN_CENTER, y + 660,
                          0, NULL);
     }
-    static const int glyphs[] = {GLYPH_SQUARE, GLYPH_START};
-    static const char *const labels[] = {"Refresh", "Settings"};
-    app_draw_hints(glyphs, labels, 2, NP_TITLE " " NP_VERSION);
+    static const int glyphs[] = {GLYPH_SQUARE, GLYPH_TRIANGLE, GLYPH_START};
+    static const char *const labels[] = {"Refresh", "Discord QR code", "Settings"};
+    app_draw_hints(glyphs, labels, 3, NP_TITLE " " NP_VERSION);
 }
 
 /* ---------------------------------------------------------------- loading */

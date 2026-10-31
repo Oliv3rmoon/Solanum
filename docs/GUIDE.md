@@ -11,7 +11,7 @@ Back to the [README](../README.md).
 | L1 / R1 | The tabs: Browse, Updates, Installed, Downloads, About |
 | D-pad, left stick | Move |
 | Cross | Open an app's page; on the page, Install, Update, Open or More |
-| Triangle | Search (Browse); More (an app's page); Update all (Updates); Clear the cache (Installed) |
+| Triangle | Search (Browse); More (an app's page); Update all (Updates); Clear the cache (Installed); the Discord QR code, larger (About) |
 | Circle | Back; during an install, cancel it (until its files are being put in place) |
 | Square | Ask for the catalogs and the newest releases again |
 | L2 / R2, right stick | Scroll the release notes |

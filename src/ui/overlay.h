@@ -32,6 +32,8 @@ bool confirm_answered(int id, bool *yes, bool *checked);
 
 /* A large QR code of `text` with a caption, until Cross or Circle. */
 void qr_open(const char *text, const char *caption);
+/* The same for a code already made (qrcodegen's, up to version 12): the community's (community.h). */
+void qr_show(const uint8_t *code, const char *caption);
 
 bool overlay_active(void);
 /* Closes whatever is open and forgets answers not read yet (a page opened for another app must never act on them). */

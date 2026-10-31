@@ -34,6 +34,11 @@ ProsperoStore's catalog's apps, and what Solanum needs to install them all: 154 
 - **No endless updates.** Solanum remembers the release it put in place (`apps.ini`), so a release whose tag names no
   version (`v0.2.0-beta.1`) isn't offered, or installed by itself, again once it is installed.
 - **Downloads** names each job's own app, not the first app of its title ID.
+- **nightly, the community.** About names the Nightshade apps' Discord server, **nightly**, under its card: its
+  address (`discord.gg/pSqgRU3YP9`) and a QR code that opens it, which Triangle shows larger. The first start of this
+  version shows the same once, on a card over the catalog; any button closes it, `settings.ini` keeps that
+  (`community_seen = 1`), and it isn't shown again. In all ten languages. `tests/test_community.py` reads the code
+  back as a phone does and checks that it opens exactly `https://discord.gg/pSqgRU3YP9`.
 - About and the Browse hint say what the catalog lists now, in all ten languages. `tests/store_check.c` checks the
   new fields, which app a shared title ID's folder is (and that a name it can't place is no app's), that no install
   replaces another app unasked, Roll back after an outside switch, the checks of GitHub's list, and that the whole

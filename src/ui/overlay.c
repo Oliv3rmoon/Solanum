@@ -133,6 +133,17 @@ void qr_open(const char *data, const char *caption)
     shown = 0.0f;
 }
 
+void qr_show(const uint8_t *code, const char *caption)
+{
+    const int size = code ? code[0] : 0; /* qrcodegen's first byte; qrcodegen_getSize asserts on a bad one */
+    qr_ok = size >= 21 && size <= 12 * 4 + 17 && (size - 17) % 4 == 0;
+    if (qr_ok)
+        memcpy(qr, code, ((size_t)size * (size_t)size + 7) / 8 + 1);
+    str_copy(qr_caption, sizeof(qr_caption), caption ? caption : "");
+    kind = QR;
+    shown = 0.0f;
+}
+
 bool overlay_active(void)
 {
     return kind != NONE;

@@ -69,6 +69,8 @@ void config_load(Settings *s, const char *path)
             s->music_shuffle = v != 0;
         else if (!strcmp(key, "music_volume"))
             s->music_volume = clamp((v + 5) / 10 * 10, 10, 100);
+        else if (!strcmp(key, "community_seen"))
+            s->community_seen = v != 0;
     }
     fclose(f);
 }
@@ -86,6 +88,7 @@ bool config_save(const Settings *s, const char *path)
     fprintf(f, "language = %d\ninstall_place = %d\nparallel = %d\nkeep_versions = %d\nauto_update = %d\n",
             s->language, s->install_place, s->parallel, s->keep_versions, s->auto_update);
     fprintf(f, "music = %d\nmusic_shuffle = %d\nmusic_volume = %d\n", s->music, s->music_shuffle, s->music_volume);
+    fprintf(f, "community_seen = %d\n", s->community_seen);
     const bool ok = fclose(f) == 0;
     if (ok)
     {

@@ -34,11 +34,13 @@ enum Tab
 enum Request
 {
     REQUEST_NONE,
-    REQUEST_INSTALL,     /* app.request_app, in app.request_text (a place, "" beside Solanum) */
+    REQUEST_INSTALL,     /* app.request_app, in app.request_text (a place, "" beside Solanum); request_arg 1: in place
+                          * of another app of its title ID, which the player agreed to (0.4.0) */
     REQUEST_OPEN,        /* app.request_app */
     REQUEST_REFRESH,     /* the catalog and the releases again */
     REQUEST_CANCEL,      /* the job app.request_arg */
-    REQUEST_VERSION,     /* app.request_app's release app.request_arg of Versions */
+    REQUEST_VERSION,     /* app.request_app's release app.request_arg of Versions; request_text "replace": in place of
+                          * another app of its title ID, which the player agreed to (0.4.0) */
     REQUEST_ROLLBACK,    /* app.request_app's version before */
     REQUEST_UNINSTALL,   /* app.request_app; app.request_arg 1: its data folder too */
     REQUEST_UPDATE_ALL,  /* every update the player wants */

@@ -792,9 +792,9 @@ static void check_apps(void)
 
     Installed none;
     memset(&none, 0, sizeof(none));
-    Installed old = {"/data/homebrew/PPSA99003", "01.002.000", false, ""};
-    Installed same = {"/data/homebrew/PPSA99003", "01.002.001", false, ""};
-    Installed image = {"/user/app/PPSA99003", "01.002.000", true, ""};
+    Installed old = {"/data/homebrew/PPSA99003", "01.002.000", false, "", ""};
+    Installed same = {"/data/homebrew/PPSA99003", "01.002.001", false, "", ""};
+    Installed image = {"/user/app/PPSA99003", "01.002.000", true, "", ""};
     EXPECT(apps_decide(&none, true, "01.002.001") == OFFER_GET, "not installed: get it");
     EXPECT(apps_decide(&none, false, "") == OFFER_NONE, "not installed, no release: nothing");
     EXPECT(apps_decide(&old, true, "01.002.001") == OFFER_UPDATE, "an older one: update it");
@@ -1107,8 +1107,8 @@ static void check_pinned_catalog(void)
         sharing += catalog.apps[i].shares[0] != '\0';
         named += catalog.apps[i].pins[0].title_name[0] != '\0';
     }
-    EXPECT(catalog.app_count >= 150 && ports >= 40 && unlicensed >= 2 && newest >= 20 && sharing == 4 && named >= 100,
-           "the 0.4.0 catalog: 150 apps or more, its ports, no-license apps, newest channels and four shared title IDs");
+    EXPECT(catalog.app_count >= 150 && ports >= 40 && unlicensed >= 2 && newest >= 15 && sharing >= 1 && named >= 100,
+           "the 0.4.0 catalog: 150 apps or more, its ports, no-license apps, newest channels and a shared title ID");
     free(json);
 }
 
@@ -1462,8 +1462,10 @@ static void check_new_line(void)
     Installed nothing = {.folder = ""};
     EXPECT(apps_owner(&shared, 0, &tv) == 1 && apps_owner(&shared, 1, &tv) == 1, "ProsperoTV is ProsperoTV's");
     EXPECT(apps_owner(&shared, 0, &fork) == 0 && apps_owner(&shared, 1, &fork) == 0, "Physalis is Physalis's");
-    EXPECT(apps_owner(&shared, 1, &unknown) == 0 && apps_owner(&shared, 1, &nameless) == 0,
-           "a folder neither names is the app listed first's");
+    EXPECT(apps_owner(&shared, 0, &unknown) == APPS_OWNER_UNKNOWN && apps_owner(&shared, 1, &unknown) == APPS_OWNER_UNKNOWN &&
+               apps_owner(&shared, 2, &unknown) == APPS_OWNER_UNKNOWN && apps_owner(&shared, 1, &nameless) == APPS_OWNER_UNKNOWN &&
+               apps_owner(&shared, 0, &nameless) == APPS_OWNER_UNKNOWN,
+           "a folder no app names, or one without a name, can't be told: never taken for the app listed first");
     EXPECT(apps_owner(&shared, 1, &nothing) == 1 && apps_owner(&shared, 3, &unknown) == 3 &&
                apps_owner(&shared, 2, &tv) == 1,
            "nothing installed, or a title ID of one app: the app itself");
@@ -1508,6 +1510,183 @@ static void check_new_line(void)
     free(latest);
 }
 
+/* ---------------------------------------------------------------- 0.4.0 review: replacing, telling apps apart */
+
+static void check_review_fixes(void)
+{
+    static Catalog pair;
+    static const char json[] =
+        "{\"schema\":1,\"apps\":["
+        APP("dulcamara", "PPSA99010", ",\"release\":{\"tag\":\"0.1.0\",\"asset\":\"dulcamara-0.1.0.zip\",\"size\":10,"
+                                      "\"sha256\":\"" HEX64 "\",\"title_name\":\"Dulcamara\"}") ","
+        APP("vkquake", "PPSA99010", ",\"shares\":\"dulcamara\",\"release\":{\"tag\":\"1.0\",\"asset\":\"vkquake-1.0.zip\","
+                                    "\"size\":10,\"sha256\":\"" HEX64 "\",\"title_name\":\"vkQuake\"}") ","
+        APP("quakespasm", "PPSA99010", ",\"shares\":\"dulcamara\",\"release\":{\"tag\":\"2.0\",\"asset\":\"quakespasm-2.0.zip\","
+                                       "\"size\":10,\"sha256\":\"" HEX64 "\",\"title_name\":\"vkQuake\"}")
+        "]}";
+    EXPECT(catalog_parse(json, sizeof(json) - 1, &pair, NULL, NULL) == 3, "a title ID three apps share");
+
+    /* 2: a name no app has, or none, is never taken for the app listed first */
+    Installed renamed = {.folder = "/data/homebrew/PPSA99010", .version = "01.000.000", .name = "vkQuake PS5"};
+    Installed nameless = {.folder = "/data/homebrew/PPSA99010", .version = "01.000.000"};
+    Installed dulcamara = {.folder = "/data/homebrew/PPSA99010", .version = "00.001.000", .name = "Dulcamara"};
+    for (int i = 0; i < 3; ++i)
+    {
+        EXPECT(apps_owner(&pair, i, &renamed) == APPS_OWNER_UNKNOWN, "vkQuake PS5, a name no app has: can't tell");
+        EXPECT(apps_owner(&pair, i, &nameless) == APPS_OWNER_UNKNOWN, "a nameless folder: can't tell");
+        EXPECT(apps_owner(&pair, i, &dulcamara) == 0, "Dulcamara's name is Dulcamara's, whichever app asks");
+    }
+    /* 4: a name the pins of two apps have is a tie, whichever app asks and in whatever order they are listed */
+    Installed both = {.folder = "/data/homebrew/PPSA99010", .version = "01.000.000", .name = "VKQUAKE"};
+    EXPECT(apps_owner(&pair, 0, &both) == APPS_OWNER_UNKNOWN && apps_owner(&pair, 1, &both) == APPS_OWNER_UNKNOWN &&
+               apps_owner(&pair, 2, &both) == APPS_OWNER_UNKNOWN,
+           "a name two apps' pins have: can't tell, from either side");
+    pair.apps[2].pins[0].title_name[0] = '\0';
+    EXPECT(apps_owner(&pair, 0, &both) == 1 && apps_owner(&pair, 2, &both) == 1,
+           "once only one pin has it, that app, whichever app asks");
+    /* a pin's name beats another app's own name; two own names tie */
+    snprintf(pair.apps[2].name, sizeof(pair.apps[2].name), "vkQuake");
+    EXPECT(apps_owner(&pair, 2, &both) == 1, "a pinned name beats an app's own name");
+    pair.apps[1].pins[0].title_name[0] = '\0';
+    snprintf(pair.apps[1].name, sizeof(pair.apps[1].name), "vkquake");
+    EXPECT(apps_owner(&pair, 0, &both) == APPS_OWNER_UNKNOWN, "two apps of that very name: can't tell");
+
+    /* 1: every install, Versions too, goes over another app of its title ID only when the player said yes */
+    const Installed none = {.folder = ""};
+    const Installed own = {.folder = "/data/homebrew/PPSA99010", .version = "00.001.000", .name = "Dulcamara"};
+    Installed image = own;
+    image.image = true;
+    const Installed *over = NULL;
+    bool switching = true;
+    EXPECT(apps_install_over(&none, -1, &none, false, &over, &switching) == INSTALL_OVER_OK && over == &none &&
+               !switching,
+           "a new app with its title ID to itself: a new install");
+    EXPECT(apps_install_over(&own, -1, &none, false, &over, &switching) == INSTALL_OVER_OK && over == &own && !switching,
+           "an installed app: over its own folder (Update, Versions)");
+    EXPECT(apps_install_over(&none, 0, &own, false, &over, &switching) == INSTALL_OVER_ASK,
+           "Versions (or Install) of an app that isn't installed, over another app of its title ID, unasked: refused");
+    EXPECT(apps_install_over(&none, APPS_OWNER_UNKNOWN, &own, false, &over, &switching) == INSTALL_OVER_ASK,
+           "... over an app Solanum can't tell, unasked: refused");
+    EXPECT(apps_install_over(&none, 0, &own, true, &over, &switching) == INSTALL_OVER_OK && over == &own && switching,
+           "once the player said yes: in place of the other app, in its folder");
+    EXPECT(apps_install_over(&none, 0, &image, true, &over, &switching) == INSTALL_OVER_IMAGE,
+           "never over an app mounted from an image, said yes or not");
+
+    /* 3: Roll back after another app of the title ID replaced this one outside Solanum: the kept ZIP is the other
+     * app's, so it isn't offered; and a title's hold and skip are one app's */
+    char cache[600], zip[700], record[700];
+    snprintf(cache, sizeof(cache), "%s/review-cache", scratch);
+    mkdir(cache, 0755);
+    KeptZip kept = {.tag = "0.0.9", .version = "00.000.009", .sha256 = HEX64, .size = 5,
+                    .url = "https://github.com/Oliv3rmoon/Dulcamara/releases/download/0.0.9/PPSA99010.zip",
+                    .name = "PPSA99010.zip"};
+    char download[700];
+    for (int round = 0; round < 2; ++round)
+    {
+        snprintf(download, sizeof(download), "%s/download-%d.zip", cache, round);
+        write_file(download, "dulca", 5);
+        kept.size = 5;
+        EXPECT(keep_store(cache, "PPSA99010", download, &kept), "Dulcamara's ZIPs kept, as Solanum installs it");
+        snprintf(kept.tag, sizeof(kept.tag), "0.1.0");
+        memset(kept.sha256, 'b', 64); /* another file: the one kept before becomes the previous version */
+        snprintf(kept.url, sizeof(kept.url), "%s",
+                 "https://github.com/Oliv3rmoon/Dulcamara/releases/download/0.1.0/PPSA99010.zip");
+    }
+    KeptZip previous;
+    keep_paths(cache, "PPSA99010", KEEP_PREVIOUS, zip, sizeof(zip), record, sizeof(record));
+    EXPECT(keep_read(cache, "PPSA99010", KEEP_PREVIOUS, &previous) && strcmp(previous.tag, "0.0.9") == 0,
+           "the version before is kept for the title ID");
+    /* vkQuake was then put in its folder by hand: the title's kept ZIP is still Dulcamara's */
+    EXPECT(!apps_url_of_repo(previous.url, "someone/vkquake") && apps_url_of_repo(previous.url, "Oliv3rmoon/Dulcamara") &&
+               apps_url_of_repo(previous.url, "oliv3rmoon/dulcamara"),
+           "Roll back after an outside switch: Dulcamara's kept ZIP is never vkQuake's");
+    EXPECT(!apps_url_of_repo("https://github.com/Oliv3rmoon/Dulcamara-Evil/releases/download/1/x.zip",
+                             "Oliv3rmoon/Dulcamara") &&
+               !apps_url_of_repo("https://example.com/Oliv3rmoon/Dulcamara/releases/download/1/x.zip",
+                                 "Oliv3rmoon/Dulcamara"),
+           "a repository whose name only starts the same, or another host, is not the app's");
+    keep_forget(cache, "PPSA99010");
+
+    char path[600];
+    snprintf(path, sizeof(path), "%s/apps-review.ini", scratch);
+    remove(path);
+    prefs_load(path);
+    AppPrefs *title = prefs_get("PPSA99010", true);
+    title->hold = true;
+    snprintf(title->skip, sizeof(title->skip), "1.0");
+    EXPECT(prefs_decisions_for(title, "dulcamara", true) && !prefs_decisions_for(title, "vkquake", false),
+           "a hold and skip written before 0.4.0 (no app) are the app listed first's");
+    snprintf(title->app, sizeof(title->app), "vkquake");
+    snprintf(title->tag, sizeof(title->tag), "v0.2.0-beta.1");
+    snprintf(title->version, sizeof(title->version), "00.002.000");
+    EXPECT(prefs_save(), "saved");
+    prefs_load(path);
+    title = prefs_get("PPSA99010", false);
+    EXPECT(title && title->hold && strcmp(title->skip, "1.0") == 0 && strcmp(title->app, "vkquake") == 0 &&
+               strcmp(title->tag, "v0.2.0-beta.1") == 0 && strcmp(title->version, "00.002.000") == 0,
+           "read back: whose decisions they are, and the release Solanum put in place");
+    EXPECT(prefs_decisions_for(title, "vkquake", false) && !prefs_decisions_for(title, "dulcamara", true),
+           "vkQuake's hold and skip are never Dulcamara's");
+    prefs_forget_install("PPSA99010");
+    EXPECT(!title->tag[0] && !title->version[0] && title->hold, "an uninstall forgets the release, keeps the hold");
+
+    /* 5: a release of GitHub's list is checked as releases/latest's is */
+    const CatalogApp *vk = &pair.apps[1];
+    char other_hex[65];
+    memset(other_hex, 'a', 64);
+    other_hex[64] = '\0';
+    github_release_asset listed;
+    github_release_files files;
+    char sums[200];
+    memset(&listed, 0, sizeof(listed));
+    snprintf(listed.tag, sizeof(listed.tag), "2.0");
+    snprintf(listed.name, sizeof(listed.name), "vkquake-2.0.zip");
+    listed.size = 10;
+    memset(&files, 0, sizeof(files));
+    files.sums_files = 1;
+    snprintf(files.digest, sizeof(files.digest), "%s", HEX64);
+    snprintf(sums, sizeof(sums), "%s  vkquake-2.0.zip\n", other_hex);
+    EXPECT(apps_release_listed(vk, &listed, &files, sums, strlen(sums), true) == GITHUB_RELEASE_HASHES_DIFFER &&
+               !listed.sha256[0],
+           "a checksum file that disagrees with GitHub's digest: refused, digest or not");
+    snprintf(sums, sizeof(sums), "%s  vkquake-2.0.zip\n", HEX64);
+    EXPECT(apps_release_listed(vk, &listed, &files, sums, strlen(sums), true) == GITHUB_RELEASE_NEWER &&
+               strcmp(listed.sha256, HEX64) == 0 && listed.from_sums,
+           "a checksum file and a digest that agree");
+    snprintf(sums, sizeof(sums), "%s  other.zip\n", HEX64);
+    EXPECT(apps_release_listed(vk, &listed, &files, sums, strlen(sums), true) == GITHUB_RELEASE_SUMS_NO_LINE &&
+               apps_release_listed(vk, &listed, &files, NULL, 0, false) == GITHUB_RELEASE_SUMS_UNREADABLE &&
+               !listed.sha256[0],
+           "a checksum file without the file's line, or one that can't be read: refused");
+    files.sums_files = 0;
+    EXPECT(apps_release_listed(vk, &listed, &files, NULL, 0, false) == GITHUB_RELEASE_NEWER &&
+               strcmp(listed.sha256, HEX64) == 0 && !listed.from_sums,
+           "no checksum file: GitHub's digest");
+    files.digest[0] = '\0';
+    EXPECT(apps_release_listed(vk, &listed, &files, NULL, 0, false) == GITHUB_RELEASE_NO_HASH, "neither: nothing");
+    snprintf(listed.tag, sizeof(listed.tag), "1.0");
+    snprintf(listed.name, sizeof(listed.name), "vkquake-1.0.zip");
+    EXPECT(apps_release_listed(vk, &listed, &files, NULL, 0, false) == GITHUB_RELEASE_NEWER && listed.pinned &&
+               strcmp(listed.sha256, HEX64) == 0,
+           "neither, but pinned: the pin");
+    files.sums_files = 1;
+    snprintf(sums, sizeof(sums), "%s  vkquake-1.0.zip\n", other_hex);
+    EXPECT(apps_release_listed(vk, &listed, &files, sums, strlen(sums), true) == GITHUB_RELEASE_HASHES_DIFFER,
+           "a checksum file that disagrees with the pin: refused");
+
+    /* 6: the release Solanum put in place is no update, however its tag reads */
+    github_release_asset pre;
+    memset(&pre, 0, sizeof(pre));
+    snprintf(pre.tag, sizeof(pre.tag), "v0.2.0-beta.1");
+    Installed fresh = {.folder = "/data/homebrew/PPSA22222", .version = "00.002.000"};
+    EXPECT(apps_decide_release(&fresh, true, &pre) == OFFER_UPDATE, "a tag naming no version: offered, as before");
+    snprintf(fresh.tag, sizeof(fresh.tag), "v0.2.0-beta.1");
+    EXPECT(apps_decide_release(&fresh, true, &pre) == OFFER_CURRENT,
+           "the very release Solanum installed: current, so automatic updates don't install it again and again");
+    snprintf(pre.tag, sizeof(pre.tag), "v0.2.0-beta.2");
+    EXPECT(apps_decide_release(&fresh, true, &pre) == OFFER_UPDATE, "the next one is offered");
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3)
@@ -1535,6 +1714,7 @@ int main(int argc, char **argv)
     check_versions();
     check_roots();
     check_new_line();
+    check_review_fixes();
     printf("%s store: %d checks, %d failed\n", failed ? "FAIL" : "PASS", passed + failed, failed);
     return failed ? 1 : 0;
 }

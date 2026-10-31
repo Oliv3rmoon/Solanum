@@ -40,7 +40,17 @@ void prefs_forget_install(const char *title)
 {
     AppPrefs *prefs = prefs_get(title, false);
     if (prefs)
+    {
         prefs->by = BY_UNKNOWN;
+        prefs->tag[0] = prefs->version[0] = '\0';
+    }
+}
+
+bool prefs_decisions_for(const AppPrefs *prefs, const char *app, bool first)
+{
+    if (!prefs)
+        return false;
+    return prefs->app[0] ? app && strcmp(prefs->app, app) == 0 : first;
 }
 
 /* A tag as a release's can be: letters, digits, '.', '_' and '-'. */
@@ -75,6 +85,12 @@ void prefs_load(const char *path)
             prefs->hold = atoi(value) != 0;
         else if (strcmp(key, "skip") == 0 && tag_text(value))
             str_copy(prefs->skip, sizeof(prefs->skip), value);
+        else if (strcmp(key, "app") == 0 && strlen(value) < sizeof(prefs->app))
+            str_copy(prefs->app, sizeof(prefs->app), value);
+        else if (strcmp(key, "tag") == 0 && tag_text(value))
+            str_copy(prefs->tag, sizeof(prefs->tag), value);
+        else if (strcmp(key, "version") == 0 && strlen(value) < sizeof(prefs->version))
+            str_copy(prefs->version, sizeof(prefs->version), value);
         else if (strcmp(key, "by") == 0)
             prefs->by = strcmp(value, "solanum") == 0 ? BY_SOLANUM : strcmp(value, "hand") == 0 ? BY_HAND : BY_UNKNOWN;
     }
@@ -100,6 +116,10 @@ bool prefs_save(void)
             fprintf(f, "%s.skip = %s\n", p->title, p->skip);
         if (p->by != BY_UNKNOWN)
             fprintf(f, "%s.by = %s\n", p->title, p->by == BY_SOLANUM ? "solanum" : "hand");
+        if (p->app[0])
+            fprintf(f, "%s.app = %s\n", p->title, p->app);
+        if (p->tag[0] && p->version[0])
+            fprintf(f, "%s.tag = %s\n%s.version = %s\n", p->title, p->tag, p->title, p->version);
     }
     const bool ok = fclose(f) == 0;
     if (ok)

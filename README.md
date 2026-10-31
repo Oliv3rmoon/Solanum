@@ -16,11 +16,11 @@
   <a href="https://buymeacoffee.com/oliv3rmoon"><img src="https://img.shields.io/badge/buy%20me%20a%20coffee-0d0d0f?style=for-the-badge&logo=buymeacoffee&logoColor=e5484d" alt="Buy me a coffee"></a>
 </p>
 
-Solanum, named after the genus at the heart of the nightshade family, is a Nightshade app by **[Oliv3rmoon](https://github.com/Oliv3rmoon)**: a PS5 homebrew store for the 159 apps of the open catalog at [Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog), which is also on the web, with a page for each app: **<https://oliv3rmoon.github.io/Solanum-Catalog/>**. The latest release is **0.3.0**, a full release; what changed is in the [changelog](docs/CHANGELOG.md).
+Solanum, named after the genus at the heart of the nightshade family, is a Nightshade app by **[Oliv3rmoon](https://github.com/Oliv3rmoon)**: a PS5 homebrew store for the 154 apps of the open catalog at [Oliv3rmoon/Solanum-Catalog](https://github.com/Oliv3rmoon/Solanum-Catalog), which is also on the web, with a page for each app: **<https://oliv3rmoon.github.io/Solanum-Catalog/>**. The latest release is **0.3.0**, a full release; what changed is in the [changelog](docs/CHANGELOG.md).
 
 ## Why Solanum
 
-- **A catalog you can read.** 159 apps, every one ProsperoStore's catalog lists with a public release except six (backup tools, a bundled game WAD, two releases with nothing installable to check): media players and clients for your own servers, emulators, decompilations, recompilations and engine ports that run your own game files, games with their own assets, AI apps and tools. Browse them by category (the Nightshade family first) or search by name, author or tag (`#emulator`, `#recomp`). Each has a page with what it does, its author, its stars on GitHub, its license (or **No license**), an **attested** badge when its own CI attests its builds, **Needs your own game files** for a port, **Pre-release** when its newest release is one, its newest version and notes, and a QR code to its source.
+- **A catalog you can read.** 154 apps, among them ProsperoStore's catalog's apps with a public release (but for backup tools, a bundled game WAD, two releases with nothing installable to check, and a few left out by choice): media players and clients for your own servers, emulators, decompilations, recompilations and engine ports that run your own game files, games with their own assets, AI apps and tools. Browse them by category (the Nightshade family first) or search by name, author or tag (`#emulator`, `#recomp`). Each has a page with what it does, its author, its stars on GitHub, its license (or **No license**), an **attested** badge when its own CI attests its builds, **Needs your own game files** for a port, **Pre-release** when its newest release is one, its newest version and notes, and a QR code to its source.
 - **Every release pinned.** The catalog's workflow downloads each app's newest release, checks it, and records its SHA-256, size and content version. Solanum checks every download against that pin, and against the release's checksum file or GitHub's digest when there is one, as it arrives and again before it is unpacked. One that doesn't match is never unpacked.
 - **Install, update, open.** Install puts an app in `/data/homebrew/<title ID>` beside Solanum, or on an extended or USB drive. Update replaces an older version's files and keeps your own. Open closes Solanum and starts the app.
 - **Undo anything.** **Versions** installs any release, an older one too; **Roll back** puts the version before back in one press, without downloading it; **Skip** an update or **Hold** an app's updates; **Uninstall** removes the app's folder and its home-screen entry, and its data folder when you tick it.
@@ -34,7 +34,7 @@ ProsperoStore is another PS5 homebrew store. Here is where they differ. A dash m
 
 | | Solanum | ProsperoStore |
 | --- | --- | --- |
-| Catalog | Solanum-Catalog: open on GitHub, 159 apps, also on the web | prosperostore.net, signed |
+| Catalog | Solanum-Catalog: open on GitHub, 154 apps, also on the web | prosperostore.net, signed |
 | Ports that need your own game files | Marked on the app's page and in the list | — |
 | Two apps of one title ID | Tells which is installed, asks before replacing it | — |
 | What checks a download | A SHA-256 pinned for every release, plus the release's checksum file or GitHub's digest | The signed catalog |

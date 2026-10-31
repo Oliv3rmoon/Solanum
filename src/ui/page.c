@@ -67,7 +67,7 @@ static int more_actions[8], more_count;
 static int places[APPS_PLACES], place_count;
 static int chosen_version = -1;
 static bool installing_after_agree;
-static bool replace_agreed; /* 0.4.0: replacing the other app of its title ID was agreed to, this time */
+static bool replace_version; /* 0.4.0: the version chosen goes in place of another app of its title ID */
 static char where_after_agree[64];
 static int shown_versions = -1; /* the Versions answer the menu shows */
 
@@ -84,7 +84,7 @@ void page_open(int index)
     progress_shown = 0;
     generation = store_generation();
     installing_after_agree = false;
-    replace_agreed = false;
+    replace_version = false;
     overlay_reset(); /* nothing asked on another app's page is answered on this one */
     char url[200];
     uint8_t temp[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
@@ -101,12 +101,43 @@ static void back(void)
     sfx_play(SFX_BACK);
 }
 
-/* What the page offers: Install (not installed), Update (an older one installed), Open (installed). */
+/* 0.4.0: another app of its title ID is installed (or one Solanum can't tell): installing this one replaces it. */
+static bool occupied(const StoreApp *s)
+{
+    return s->looked && !s->installed.folder[0] && s->occupant != -1 && s->occupied.folder[0];
+}
+
+/* What the page offers: Install (not installed), Update (an older one installed), Open (installed). Never over another
+ * app of its title ID that is mounted from an image. */
 static bool can_install(int index)
 {
     const StoreApp *s = store_app(index);
     return s->looked && s->checked && (s->offer == OFFER_GET || s->offer == OFFER_UPDATE) &&
-           strcmp(store_catalog()->apps[index].title_id, NP_TITLE_ID) != 0;
+           strcmp(store_catalog()->apps[index].title_id, NP_TITLE_ID) != 0 && !(occupied(s) && s->occupied.image);
+}
+
+/* 0.4.0: the question every install of an app over another of its title ID asks first (Install, Versions). */
+static void replace_question(int index, char *title, size_t title_size, char *body, size_t size)
+{
+    const CatalogApp *a = &store_catalog()->apps[index];
+    const StoreApp *s = store_app(index);
+    if (s->occupant >= 0 && s->occupant < store_catalog()->app_count)
+    {
+        const CatalogApp *other = &store_catalog()->apps[s->occupant];
+        snprintf(body, size,
+                 tr("%s and %s have the same title ID, %s, and a console holds one of them. Installing %s puts it "
+                    "in place of %s, in %s. Its saved data stays, and it comes back the same way."),
+                 a->name, other->name, a->title_id, a->name, other->name, s->occupied.folder);
+        snprintf(title, title_size, tr("Replace %s?"), other->name);
+    }
+    else
+    {
+        snprintf(body, size,
+                 tr("The app in %s has this app's title ID, %s, and Solanum can't tell which app it is. Installing %s "
+                    "puts it in place of that app. Its saved data stays."),
+                 s->occupied.folder, a->title_id, a->name);
+        snprintf(title, title_size, "%s", tr("Replace the app there?"));
+    }
 }
 
 static bool can_open(int index)
@@ -157,10 +188,10 @@ static void place_label(int place, char *label, size_t size, char *detail, size_
         snprintf(detail, detail_size, "%s", apps_place(place));
 }
 
-static void install_now(int index, const char *where)
+static void install_now(int index, const char *where, bool replace)
 {
     sfx_play(SFX_SELECT);
-    app_request_with(REQUEST_INSTALL, index, 0, where);
+    app_request_with(REQUEST_INSTALL, index, replace ? 1 : 0, where);
 }
 
 /* Install (or Update): a third-party app asks first; a new app asks where when there is a choice. */
@@ -185,26 +216,25 @@ static void begin_install(int index)
     }
     if (!fresh)
     {
-        install_now(index, "");
+        install_now(index, "", false);
         return;
     }
-    /* 0.4.0: another app of its title ID is installed: this one goes in its place, once the player says so */
-    if (s->occupant >= 0 && s->occupied.folder[0] && s->occupant < store_catalog()->app_count)
+    /* 0.4.0: another app of its title ID is installed: this one goes in its place, once the player says so (never over
+     * an image) */
+    if (occupied(s))
     {
-        if (!replace_agreed)
+        char body[700], title[160];
+        if (s->occupied.image)
         {
-            const CatalogApp *other = &store_catalog()->apps[s->occupant];
-            char body[700], title[160];
             snprintf(body, sizeof(body),
-                     tr("%s and %s have the same title ID, %s, and a console holds one of them. Installing %s puts it "
-                        "in place of %s, in %s. Its saved data stays, and it comes back the same way."),
-                     a->name, other->name, a->title_id, a->name, other->name, s->occupied.folder);
-            snprintf(title, sizeof(title), tr("Replace %s?"), other->name);
-            confirm_open(ASK_REPLACE, title, body, tr("Install"), NULL, false);
+                     tr("%s is mounted from an image under the same title ID. Solanum can't replace an image: remove "
+                        "the image first."),
+                     s->occupant >= 0 ? store_catalog()->apps[s->occupant].name : tr("Another app"));
+            app_message_box(body);
             return;
         }
-        replace_agreed = false;
-        install_now(index, "");
+        replace_question(index, title, sizeof(title), body, sizeof(body));
+        confirm_open(ASK_REPLACE, title, body, tr("Install"), NULL, false);
         return;
     }
     const int setting = app.settings.install_place;
@@ -222,9 +252,9 @@ static void begin_install(int index)
         return;
     }
     if (setting >= 1 && setting <= APPS_PLACES && store_free_mb(apps_place_drive(setting - 1)) >= 0)
-        install_now(index, apps_place(setting - 1));
+        install_now(index, apps_place(setting - 1), false);
     else
-        install_now(index, "");
+        install_now(index, "", false);
 }
 
 static void open_more(int index)
@@ -249,9 +279,9 @@ static void open_more(int index)
         ++more_count;                                                                                                  \
     } while (0)
     char line[200], extra[200];
-    if (fresh && !own && can_install(index) && list_places() > 1)
+    if (fresh && !own && can_install(index) && !occupied(s) && list_places() > 1)
         ADD(MORE_PLACE, tr("Install on..."), tr("Internal storage, an extended drive or a USB drive"), true);
-    if (!own && s->looked && !s->installed.image)
+    if (!own && s->looked && !s->installed.image && !(occupied(s) && s->occupied.image))
         ADD(MORE_VERSIONS, tr("Versions..."), tr("Install any release of it, an older one too"), true);
     if (s->kept && !own)
     {
@@ -396,7 +426,7 @@ static void answers(int index)
         }
     }
     if (menu_chosen(MENU_PLACE, &item) && item >= 0 && item < place_count)
-        install_now(index, apps_place(places[item]));
+        install_now(index, apps_place(places[item]), false);
     if (menu_is_open(MENU_VERSIONS) && shown_versions != store_versions()->state)
     {
         shown_versions = store_versions()->state;
@@ -409,7 +439,15 @@ static void answers(int index)
         {
             char body[700], title[160];
             chosen_version = item;
-            if (s->installed.folder[0])
+            replace_version = false;
+            if (occupied(s))
+            {
+                /* 0.4.0: in place of another app of its title ID: the same question as Install's */
+                char replace_title[160];
+                replace_question(index, replace_title, sizeof(replace_title), body, sizeof(body));
+                replace_version = true;
+            }
+            else if (s->installed.folder[0])
                 snprintf(body, sizeof(body),
                          tr("%s %s goes in place of the installed %s. Your own files in its folder stay, and Solanum "
                             "keeps the version it replaces for Roll back."),
@@ -421,16 +459,13 @@ static void answers(int index)
         }
     }
     if (confirm_answered(ASK_VERSION, &yes, &checked) && yes)
-        app_request_with(REQUEST_VERSION, index, chosen_version, "");
+        app_request_with(REQUEST_VERSION, index, chosen_version, replace_version ? "replace" : "");
     if (confirm_answered(ASK_ROLLBACK, &yes, &checked) && yes)
         app_request(REQUEST_ROLLBACK, index);
     if (confirm_answered(ASK_UNINSTALL, &yes, &checked) && yes)
         app_request_with(REQUEST_UNINSTALL, index, checked ? 1 : 0, "");
     if (confirm_answered(ASK_REPLACE, &yes, &checked) && yes)
-    {
-        replace_agreed = true;
-        begin_install(index);
-    }
+        install_now(index, "", true);
     if (confirm_answered(ASK_THIRD_PARTY, &yes, &checked))
     {
         if (yes && installing_after_agree)
@@ -665,10 +700,12 @@ void page_screen(uint32_t pressed)
         {
             if (s->occupant >= 0 && s->occupant < catalog->app_count)
                 snprintf(note, sizeof(note), tr("Installing it replaces %s"), catalog->apps[s->occupant].name);
+            else if (occupied(s))
+                snprintf(note, sizeof(note), "%s", tr("Its title ID holds an app Solanum can't tell"));
             else
                 snprintf(note, sizeof(note), tr("Shares its title ID with %s"), catalog->apps[others[0]].name);
             notes[count] = note;
-            colors[count++] = s->occupant >= 0 ? TH_GOLD : TH_TEXT_SOFT;
+            colors[count++] = occupied(s) ? TH_GOLD : TH_TEXT_SOFT;
         }
         for (int n = 0; n < count; ++n)
         {
@@ -718,8 +755,11 @@ void page_screen(uint32_t pressed)
         else
             snprintf(value, sizeof(value), "%s%s", s->installed.folder, s->installed.image ? tr("  (an image)") : "");
     }
-    else if (s->looked && s->occupant >= 0 && s->occupant < catalog->app_count && s->occupied.folder[0])
-        snprintf(value, sizeof(value), tr("%s is there now, in %s"), catalog->apps[s->occupant].name,
+    else if (occupied(s))
+        snprintf(value, sizeof(value), tr("%s is there now, in %s"),
+                 s->occupant >= 0 && s->occupant < catalog->app_count ? catalog->apps[s->occupant].name
+                 : s->occupied.name[0]                                ? s->occupied.name
+                                                                      : tr("Another app"),
                  s->occupied.folder);
     else
         snprintf(value, sizeof(value), "%s", tr("Not installed yet: Install says where it goes"));
@@ -787,6 +827,8 @@ void page_screen(uint32_t pressed)
             why = tr("This is Solanum: it updates itself (Settings).");
         else if (s->looked && s->installed.image)
             why = tr("Installed as an image: update it by replacing the image.");
+        else if (occupied(s) && s->occupied.image)
+            why = tr("Another app of its title ID is mounted from an image.");
         else if (s->hold && s->offer == OFFER_UPDATE)
             why = tr("Its updates are held (More).");
         else if (s->checked && s->offer == OFFER_CURRENT)

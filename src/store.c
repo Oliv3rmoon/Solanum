@@ -174,9 +174,25 @@ const char *store_problem(int reason)
 static void mirror_prefs(int index)
 {
     const AppPrefs *prefs = prefs_get(catalog.apps[index].title_id, false);
-    apps[index].hold = prefs && prefs->hold;
-    str_copy(apps[index].skip, sizeof(apps[index].skip), prefs ? prefs->skip : "");
+    /* 0.4.0: a title's hold and skip are one app's, which matters when two apps share the title ID */
+    const bool its = prefs_decisions_for(prefs, catalog.apps[index].id, !catalog.apps[index].shares[0]);
+    apps[index].hold = its && prefs->hold;
+    str_copy(apps[index].skip, sizeof(apps[index].skip), its ? prefs->skip : "");
     apps[index].by = prefs ? prefs->by : BY_UNKNOWN;
+}
+
+/* The title's decisions made this app's (under the lock): another app's hold and skip go. */
+static AppPrefs *decisions_of(int index)
+{
+    AppPrefs *prefs = prefs_get(catalog.apps[index].title_id, true);
+    if (prefs && !prefs_decisions_for(prefs, catalog.apps[index].id, !catalog.apps[index].shares[0]))
+    {
+        prefs->hold = false;
+        prefs->skip[0] = '\0';
+    }
+    if (prefs)
+        str_copy(prefs->app, sizeof(prefs->app), catalog.apps[index].id);
+    return prefs;
 }
 
 void store_set_hold(int index, bool hold)
@@ -184,7 +200,7 @@ void store_set_hold(int index, bool hold)
     store_lock();
     if (index >= 0 && index < catalog.app_count)
     {
-        AppPrefs *prefs = prefs_get(catalog.apps[index].title_id, true);
+        AppPrefs *prefs = decisions_of(index);
         if (prefs)
         {
             prefs->hold = hold;
@@ -201,7 +217,7 @@ void store_set_skip(int index, const char *tag)
     store_lock();
     if (index >= 0 && index < catalog.app_count)
     {
-        AppPrefs *prefs = prefs_get(catalog.apps[index].title_id, true);
+        AppPrefs *prefs = decisions_of(index);
         if (prefs)
         {
             str_copy(prefs->skip, sizeof(prefs->skip), tag ? tag : "");
@@ -419,12 +435,24 @@ static void look(void)
         memset(&occupied, 0, sizeof(occupied));
         store_lock();
         if (gen == generation)
+        {
             owner = apps_owner(&catalog, i, &found);
+            /* the release Solanum put in place, while that is still what is installed (prefs.h) */
+            const AppPrefs *prefs = prefs_get(titles[i], false);
+            if (owner == i && found.folder[0] && prefs && prefs->tag[0] && strcmp(prefs->version, found.version) == 0 &&
+                prefs_decisions_for(prefs, catalog.apps[i].id, !catalog.apps[i].shares[0]))
+                str_copy(found.tag, sizeof(found.tag), prefs->tag);
+        }
         store_unlock();
         if (owner != i)
         {
+            /* another app of its title ID, or one Solanum can't tell (APPS_OWNER_UNKNOWN): not this one's to update,
+             * roll back or uninstall */
             occupied = found;
             memset(&found, 0, sizeof(found));
+            if (owner == APPS_OWNER_UNKNOWN)
+                np_log("apps: %s: the app in %s (\"%s\") is none Solanum can tell of the apps of its title ID",
+                       titles[i], occupied.folder, occupied.name);
         }
         uint64_t size = 0;
         const bool sized = found.folder[0] && !found.image && apps_folder_size(found.folder, &size);
@@ -439,7 +467,9 @@ static void look(void)
             apps[i].looked = true;
             apps[i].sized = sized;
             apps[i].size = size;
-            apps[i].kept = kept;
+            /* a ZIP kept for the title ID is this app's only when it came from its own repository: after another app
+             * of the title ID replaced it, outside Solanum too, Roll back never puts the other one back */
+            apps[i].kept = kept && apps_url_of_repo(previous.url, catalog.apps[i].repo);
             if (kept)
                 apps[i].previous = previous;
             apps[i].offer = apps[i].checked ? (int)apps_decide_release(&found, apps[i].reason == GITHUB_RELEASE_NEWER,
@@ -631,11 +661,13 @@ static int on_text(void *user, const void *data, size_t size)
     return 1;
 }
 
-/* An app's releases, newest first: one request, then each file's SHA-256 from the catalog's pin, GitHub's digest or
- * the release's checksum file (empty: none, or a file that changed after it was pinned). Pre-releases too for an app
- * whose channel is "newest". Returns how many (-1: none could be read, *error says why); *status is GitHub's. */
+/* An app's releases, newest first: one request, then the first `check` of them made checkable as releases/latest's
+ * is (apps_release_listed): GitHub's digest, the release's checksum file, which must name the file and agree with
+ * the digest, and the catalog's pin, which must agree with both (sha256 empty: it can't be installed). Pre-releases
+ * too for an app whose channel is "newest". Returns how many (-1: none could be read, *error says why); *status is
+ * GitHub's. */
 static int fetch_releases(const CatalogApp *app, github_release_asset *list, github_release_files *files, int most,
-                          char *answer, const char **error, int *status)
+                          int check, char *answer, const char **error, int *status)
 {
     char url[256];
     size_t length = 0;
@@ -661,43 +693,28 @@ static int fetch_releases(const CatalogApp *app, github_release_asset *list, git
     }
     for (int i = 0; i < count; ++i)
     {
-        /* the catalog's pin first: it must agree with GitHub's digest when there is one */
-        if (app->source == 0)
+        if (i >= check)
         {
-            const int pin = apps_pin_for(app, list[i].tag, list[i].name);
-            if (pin >= 0)
-            {
-                if ((list[i].sha256[0] && strcmp(list[i].sha256, app->pins[pin].sha256) != 0) ||
-                    list[i].size != app->pins[pin].size)
-                    list[i].sha256[0] = '\0'; /* changed after it was pinned: not offered */
-                else
-                {
-                    str_copy(list[i].sha256, sizeof(list[i].sha256), app->pins[pin].sha256);
-                    str_copy(list[i].content, sizeof(list[i].content), app->pins[pin].content);
-                    list[i].pinned = 1;
-                }
-                continue;
-            }
+            list[i].sha256[0] = '\0';
+            continue;
         }
-        if (list[i].sha256[0] || files[i].sums_files != 1 || files[i].sums_size == 0 ||
-            files[i].sums_size > GITHUB_RELEASE_MAX_SUMS)
-            continue;
-        /* the release's checksum file, from github.com as the file will be */
-        char sums_url[512], text[GITHUB_RELEASE_MAX_SUMS + 1], sha[65];
-        const int written = snprintf(sums_url, sizeof(sums_url), "https://github.com/%s/releases/download/%s/%s",
-                                     app->repo, list[i].tag, app->checksums);
-        if (written <= 0 || (size_t)written >= sizeof(sums_url) || !self_update_url_allowed(sums_url, 0))
-            continue;
+        /* the release's checksum file, from github.com as the file will be, whenever there is one */
+        char text[GITHUB_RELEASE_MAX_SUMS + 1];
+        bool read = false;
         TextSink sink = {text, sizeof(text) - 1, 0};
-        int got_status = 0;
-        if (store_kit_range(NULL, sums_url, 0, sizeof(text) - 1, on_text, &sink, &got_status) != 0)
-            continue;
-        text[sink.used] = '\0';
-        if (github_release_sums(text, sink.used, list[i].name, sha) == 1)
+        if (files[i].sums_files == 1 && files[i].sums_size > 0 && files[i].sums_size <= GITHUB_RELEASE_MAX_SUMS)
         {
-            str_copy(list[i].sha256, sizeof(list[i].sha256), sha);
-            list[i].from_sums = 1;
+            char sums_url[512];
+            const int written = snprintf(sums_url, sizeof(sums_url), "https://github.com/%s/releases/download/%s/%s",
+                                         app->repo, list[i].tag, app->checksums);
+            int got_status = 0;
+            read = written > 0 && (size_t)written < sizeof(sums_url) && self_update_url_allowed(sums_url, 0) &&
+                   store_kit_range(NULL, sums_url, 0, sizeof(text) - 1, on_text, &sink, &got_status) == 0;
         }
+        text[read ? sink.used : 0] = '\0';
+        const int reason = apps_release_listed(app, &list[i], &files[i], text, read ? sink.used : 0, read);
+        if (reason != GITHUB_RELEASE_NEWER)
+            np_log("releases: %s %s %s: %s", app->repo, list[i].tag, list[i].name, github_release_reason_text(reason));
     }
     return count;
 }
@@ -723,7 +740,8 @@ static void list_versions(int index)
     if (!answer || !list || !files)
         error = "Solanum ran out of memory.";
     else
-        count = fetch_releases(&app, list, files, GITHUB_RELEASE_LIST_MAX, answer, &error, &status);
+        count = fetch_releases(&app, list, files, GITHUB_RELEASE_LIST_MAX, GITHUB_RELEASE_LIST_MAX, answer, &error,
+                               &status);
     store_lock();
     if (gen == generation)
     {
@@ -748,7 +766,7 @@ static github_release_reason ask_newest(const CatalogApp *app, github_release_as
 {
     enum
     {
-        NEWEST_LIST = 10
+        NEWEST_LIST = 30 /* as the catalog's pin tool reads them */
     };
     char *answer = malloc(GITHUB_RELEASE_MAX_ANSWER);
     github_release_asset *list = calloc(NEWEST_LIST, sizeof(github_release_asset));
@@ -759,13 +777,14 @@ static github_release_reason ask_newest(const CatalogApp *app, github_release_as
     memset(release, 0, sizeof(*release));
     if (answer && list && files)
     {
-        const int count = fetch_releases(app, list, files, NEWEST_LIST, answer, &error, &status);
+        const int count = fetch_releases(app, list, files, NEWEST_LIST, 1, answer, &error, &status);
         if (status == 403 || status == 429)
             reason = GITHUB_RELEASE_RATE_LIMITED;
         else if (count == 0)
             reason = GITHUB_RELEASE_NO_ZIP;
         else if (count > 0)
         {
+            /* the newest with its file is its release; checked as releases/latest's would be (fetch_releases) */
             *release = list[0];
             reason = release->sha256[0] ? GITHUB_RELEASE_NEWER : GITHUB_RELEASE_NO_HASH;
         }
@@ -932,6 +951,7 @@ typedef struct
     char asset[128];
     bool from_kept;           /* a roll back: the download is the kept ZIP */
     bool switching;           /* 0.4.0: it replaces another app of its title ID (catalog_sharing) */
+    char app_id[32];          /* 0.4.0: the catalog's id of the app, which a title ID two apps share doesn't say */
     self_update_job job;      /* zero until its first start, as the kit asks */
     bool begun;
     ResumeDownload resume;
@@ -1019,10 +1039,11 @@ static uint64_t job_now(void *user)
 
 
 /* The catalog's index of a title, -1 when the catalog doesn't list it (under the lock). */
-static int index_of(const char *title)
+/* The catalog's index of a job's app: its id when the job has one (a title ID can be two apps'), else its title's. */
+static int index_of(const char *title, const char *app_id)
 {
     for (int i = 0; i < catalog.app_count; ++i)
-        if (strcmp(catalog.apps[i].title_id, title) == 0)
+        if (strcmp(catalog.apps[i].title_id, title) == 0 && (!app_id || !app_id[0] || strcmp(catalog.apps[i].id, app_id) == 0))
             return i;
     return -1;
 }
@@ -1040,6 +1061,7 @@ static void describe(Slot *slot, StoreJob *out)
     out->kind = slot->kind;
     out->app = -1;
     str_copy(out->title, sizeof(out->title), slot->title);
+    str_copy(out->app_id, sizeof(out->app_id), slot->app_id);
     str_copy(out->name, sizeof(out->name), slot->name);
     str_copy(out->tag, sizeof(out->tag), slot->tag);
     out->fresh = slot->fresh;
@@ -1275,14 +1297,26 @@ static Slot *queue_slot(const char *title, char *reason, size_t size)
 
 /* Queues an offer (under both locks). */
 static bool queue_offer(int index, int kind, const github_release_asset *release, const char *where, bool from_kept,
-                        char *reason, size_t size)
+                        bool replace, char *reason, size_t size)
 {
     self_update_offer offer;
     const CatalogApp *a = &catalog.apps[index];
     const StoreApp *s = &apps[index];
-    /* 0.4.0: another app of its title ID is installed: this one goes in place of it, in its folder */
-    const bool switching = !s->installed.folder[0] && s->occupant >= 0 && s->occupied.folder[0];
-    const Installed *over = switching ? &s->occupied : &s->installed;
+    /* 0.4.0: another app of its title ID is installed (or one Solanum can't tell): this one goes in place of it, in
+     * its folder, only when the player said so (`replace`), and never over an image */
+    const Installed *over;
+    bool switching;
+    const InstallOver how = apps_install_over(&s->installed, s->occupant, &s->occupied, replace, &over, &switching);
+    if (how == INSTALL_OVER_IMAGE)
+    {
+        str_copy(reason, size, "Another app of its title ID is mounted from an image: remove the image first.");
+        return false;
+    }
+    if (how == INSTALL_OVER_ASK)
+    {
+        str_copy(reason, size, "Another app of its title ID is installed: its page asks before replacing it.");
+        return false;
+    }
     if (!apps_make_offer(a, release, over, NP_TITLE_ID, &offer))
     {
         str_copy(reason, size, "Its release is not one Solanum can install.");
@@ -1314,6 +1348,7 @@ static bool queue_offer(int index, int kind, const github_release_asset *release
     str_copy(slot->asset, sizeof(slot->asset), release->name);
     slot->fresh = fresh || switching;
     slot->switching = switching;
+    str_copy(slot->app_id, sizeof(slot->app_id), a->id);
     slot->offer = offer;
     slot->from_kept = from_kept;
     np_log("queue: %s %s %s (%s -> %s)%s%s%s%s", kind == JOB_ROLLBACK ? "roll back" : kind == JOB_VERSION ? "version"
@@ -1321,11 +1356,12 @@ static bool queue_offer(int index, int kind, const github_release_asset *release
                                                 : fresh                ? "install"
                                                                        : "update",
            a->title_id, release->tag, offer.installed, offer.available, offer.where[0] ? " in " : "", offer.where,
-           switching ? " in place of " : "", switching ? catalog.apps[s->occupant].id : "");
+           switching ? " in place of " : "",
+           switching ? (s->occupant >= 0 ? catalog.apps[s->occupant].id : "an app it can't tell") : "");
     return true;
 }
 
-bool store_install(int index, const char *where, char *reason, size_t size)
+bool store_install(int index, const char *where, bool replace, char *reason, size_t size)
 {
     bool queued = false;
     reason[0] = '\0';
@@ -1344,13 +1380,13 @@ bool store_install(int index, const char *where, char *reason, size_t size)
         str_copy(reason, size, "Its release is not one Solanum can install.");
     else
         queued = queue_offer(index, apps[index].installed.folder[0] ? JOB_UPDATE : JOB_INSTALL, &apps[index].release,
-                             where, false, reason, size);
+                             where, false, replace, reason, size);
     SDL_UnlockMutex(jobs_lock);
     store_unlock();
     return queued;
 }
 
-bool store_install_version(int index, int version, char *reason, size_t size)
+bool store_install_version(int index, int version, bool replace, char *reason, size_t size)
 {
     bool queued = false;
     reason[0] = '\0';
@@ -1369,7 +1405,7 @@ bool store_install_version(int index, int version, char *reason, size_t size)
         str_copy(reason, size, "That release has no checksum Solanum can check it against, so it won't install it.");
     else
         queued = queue_offer(index, apps[index].installed.folder[0] ? JOB_VERSION : JOB_INSTALL,
-                             &versions.list[version], "", false, reason, size);
+                             &versions.list[version], "", false, replace, reason, size);
     SDL_UnlockMutex(jobs_lock);
     store_unlock();
     return queued;
@@ -1385,7 +1421,8 @@ bool store_rollback(int index, char *reason, size_t size)
     KeptZip previous;
     if (index < 0 || index >= catalog.app_count || !apps[index].looked || !apps[index].installed.folder[0])
         str_copy(reason, size, "The app isn't installed.");
-    else if (!keep_read(cache, catalog.apps[index].title_id, KEEP_PREVIOUS, &previous))
+    else if (!keep_read(cache, catalog.apps[index].title_id, KEEP_PREVIOUS, &previous) ||
+             !apps_url_of_repo(previous.url, catalog.apps[index].repo))
         str_copy(reason, size, "Solanum didn't keep the version before this one. Versions lists the others.");
     else
     {
@@ -1396,7 +1433,7 @@ bool store_rollback(int index, char *reason, size_t size)
         str_copy(release.sha256, sizeof(release.sha256), previous.sha256);
         str_copy(release.url, sizeof(release.url), previous.url);
         release.size = previous.size;
-        queued = queue_offer(index, JOB_ROLLBACK, &release, "", true, reason, size);
+        queued = queue_offer(index, JOB_ROLLBACK, &release, "", true, false, reason, size);
         if (queued)
         {
             /* the version it held, as the helper reported it: exact, so the helper checks the ZIP is that one */
@@ -1433,6 +1470,7 @@ bool store_uninstall(int index, bool data, char *reason, size_t size)
         {
             slot->state = SLOT_QUEUED;
             slot->kind = JOB_REMOVE;
+            str_copy(slot->app_id, sizeof(slot->app_id), catalog.apps[index].id);
             str_copy(slot->name, sizeof(slot->name), catalog.apps[index].name);
             str_copy(slot->installed, sizeof(slot->installed),
                      update_check_version_parse(apps[index].installed.version, NULL) ? apps[index].installed.version
@@ -1511,18 +1549,7 @@ static void finished(Slot *slot, const StoreJob *job)
         return;
     }
     if (slot->switching)
-    {
-        /* the kept versions and the decisions were the other app's: Roll back never puts that one back */
-        keep_forget(cache, slot->title);
-        store_lock();
-        AppPrefs *other = prefs_get(slot->title, false);
-        if (other)
-        {
-            other->hold = false;
-            other->skip[0] = '\0';
-        }
-        store_unlock();
-    }
+        keep_forget(cache, slot->title); /* the kept versions were the other app's: Roll back never puts it back */
     if (slot->from_kept)
     {
         if (!keep_swap(cache, slot->title))
@@ -1554,6 +1581,20 @@ static void finished(Slot *slot, const StoreJob *job)
             prefs->by = BY_SOLANUM;
         else if (prefs->by == BY_UNKNOWN)
             prefs->by = BY_HAND;
+        /* 0.4.0: whose title ID it is now (another app's hold and skip go), and the release put in place */
+        if (slot->app_id[0] && strcmp(prefs->app, slot->app_id) != 0)
+        {
+            const int index = index_of(slot->title, slot->app_id);
+            if (slot->switching || (index >= 0 && !prefs_decisions_for(prefs, slot->app_id,
+                                                                       !catalog.apps[index].shares[0])))
+            {
+                prefs->hold = false;
+                prefs->skip[0] = '\0';
+            }
+            str_copy(prefs->app, sizeof(prefs->app), slot->app_id);
+        }
+        str_copy(prefs->tag, sizeof(prefs->tag), slot->tag);
+        str_copy(prefs->version, sizeof(prefs->version), job->version);
         prefs_save();
     }
     store_unlock();
@@ -1649,7 +1690,7 @@ int store_jobs(StoreJob *out, int most)
         for (int i = 0; i < n && count < most; ++i)
         {
             describe(these[i], &out[count]);
-            out[count].app = index_of(these[i]->title);
+            out[count].app = index_of(these[i]->title, these[i]->app_id);
             ++count;
         }
     }
@@ -1666,7 +1707,8 @@ bool store_job_of(int index, StoreJob *out)
     SDL_LockMutex(jobs_lock);
     for (int i = 0; i < STORE_JOBS && !found; ++i)
         if ((slots[i].state == SLOT_QUEUED || slots[i].state == SLOT_RUNNING) &&
-            strcmp(slots[i].title, catalog.apps[index].title_id) == 0)
+            strcmp(slots[i].title, catalog.apps[index].title_id) == 0 &&
+            (!slots[i].app_id[0] || strcmp(slots[i].app_id, catalog.apps[index].id) == 0))
         {
             describe(&slots[i], out);
             out->app = index;
@@ -1708,7 +1750,7 @@ bool store_job_ended(StoreJob *out)
     if (found)
     {
         store_lock();
-        out->app = index_of(out->title);
+        out->app = index_of(out->title, out->app_id);
         store_unlock();
     }
     return found;

@@ -103,8 +103,9 @@ typedef struct
     /* the version before the installed one, kept for Roll back (keep.h) */
     bool kept;
     KeptZip previous;
-    /* 0.4.0: its title ID is shared (catalog_sharing) and another app of it is installed: that app's catalog index,
-     * and its folder, which an install of this one replaces (-1: none) */
+    /* 0.4.0: its title ID is shared (catalog_sharing) and another app of it is installed: that app's catalog index, or
+     * APPS_OWNER_UNKNOWN when Solanum can't tell which app it is (neither is updated, rolled back or uninstalled
+     * then); and its folder, which an install of this one replaces once the player says so (-1: none) */
     int occupant;
     Installed occupied;
 } StoreApp;
@@ -155,6 +156,7 @@ typedef struct
     int kind;         /* JobKind */
     int app;          /* the catalog's index, -1 when the catalog changed under it */
     char title[10];
+    char app_id[32];  /* 0.4.0: the catalog's id of its app (a title ID can be two apps') */
     char name[64];
     char tag[40];     /* the release being installed */
     JobPhase phase;
@@ -171,10 +173,12 @@ typedef struct
 } StoreJob;
 
 /* Queues the offered release of an app (Install or Update). `where`: for a new app, the folder to put it in
- * (apps_place), "" beside Solanum. False when it can't be queued; *reason says why. */
-bool store_install(int index, const char *where, char *reason, size_t size);
-/* Queues one of the releases Versions listed (store_versions). */
-bool store_install_version(int index, int version, char *reason, size_t size);
+ * (apps_place), "" beside Solanum. 0.4.0: when another app of its title ID is installed (StoreApp.occupant), it goes
+ * in place of that one only with `replace` (the player said yes to its page's question), and never over an image.
+ * False when it can't be queued; *reason says why. */
+bool store_install(int index, const char *where, bool replace, char *reason, size_t size);
+/* Queues one of the releases Versions listed (store_versions); `replace` as for store_install. */
+bool store_install_version(int index, int version, bool replace, char *reason, size_t size);
 /* Queues the version before the installed one, from its kept ZIP. */
 bool store_rollback(int index, char *reason, size_t size);
 /* Queues an uninstall; with `data`, its data folder (the catalog's) goes too. */

@@ -429,34 +429,110 @@ static bool same_name(const char *a, const char *b)
 
 int apps_owner(const Catalog *catalog, int index, const Installed *installed)
 {
-    int group[8], count, first;
+    int group[8], count, best = -1, ties = 0, strongest = 0;
     if (!catalog || index < 0 || index >= catalog->app_count || !installed || !installed->folder[0])
         return index;
     count = catalog_sharing(catalog, index, group, 7);
     if (count == 0)
         return index;
     group[count++] = index;
-    first = group[0];
-    for (int i = 1; i < count; ++i)
-        if (group[i] < first)
-            first = group[i];
     if (!installed->name[0])
-        return first;
-    /* the name its pinned releases give it, then its own name */
-    for (int pass = 0; pass < 2; ++pass)
-        for (int g = 0; g < count; ++g)
+        return APPS_OWNER_UNKNOWN;
+    /* each app's claim on the name: 2 a pinned release has it, 1 the app's own name is it; the strongest claim wins
+     * when only one app makes it, and the group's order never matters */
+    for (int g = 0; g < count; ++g)
+    {
+        const CatalogApp *app = &catalog->apps[group[g]];
+        int claim = 0;
+        for (int p = 0; p < app->pin_count && claim < 2; ++p)
+            if (app->pins[p].title_name[0] && same_name(app->pins[p].title_name, installed->name))
+                claim = 2;
+        if (claim == 0 && same_name(app->name, installed->name))
+            claim = 1;
+        if (claim > strongest)
         {
-            const CatalogApp *app = &catalog->apps[group[g]];
-            if (pass == 0)
-            {
-                for (int p = 0; p < app->pin_count; ++p)
-                    if (app->pins[p].title_name[0] && same_name(app->pins[p].title_name, installed->name))
-                        return group[g];
-            }
-            else if (same_name(app->name, installed->name))
-                return group[g];
+            strongest = claim;
+            best = group[g];
+            ties = 0;
         }
-    return first;
+        else if (claim > 0 && claim == strongest)
+            ++ties;
+    }
+    return strongest > 0 && ties == 0 ? best : APPS_OWNER_UNKNOWN;
+}
+
+InstallOver apps_install_over(const Installed *installed, int occupant, const Installed *occupied, bool replace,
+                              const Installed **over, bool *switching)
+{
+    const bool other = !installed->folder[0] && occupant != -1 && occupied && occupied->folder[0];
+    *switching = false;
+    *over = installed;
+    if (!other)
+        return INSTALL_OVER_OK;
+    if (occupied->image)
+        return INSTALL_OVER_IMAGE;
+    if (!replace)
+        return INSTALL_OVER_ASK;
+    *switching = true;
+    *over = occupied;
+    return INSTALL_OVER_OK;
+}
+
+bool apps_url_of_repo(const char *url, const char *repo)
+{
+    char prefix[200];
+    /* the address a download of the repository's releases is made with (download_url), its owner and name in any case */
+    const int length = snprintf(prefix, sizeof(prefix), "https://github.com/%s/releases/download/", repo ? repo : "");
+    if (!url || !repo || !github_release_repository_valid(repo) || length <= 0 || (size_t)length >= sizeof(prefix))
+        return false;
+    for (int i = 0; i < length; ++i)
+        if (tolower((unsigned char)url[i]) != tolower((unsigned char)prefix[i]))
+            return false;
+    return true;
+}
+
+int apps_release_listed(const CatalogApp *app, github_release_asset *asset, const github_release_files *files,
+                        const char *sums, size_t sums_length, bool sums_read)
+{
+    int reason;
+    char line[65];
+    if (!app || !asset || !files)
+        return GITHUB_RELEASE_BAD_ARGUMENT;
+    asset->sha256[0] = '\0';
+    asset->from_sums = 0;
+    asset->pinned = 0;
+    if (files->sums_files == 1)
+    {
+        /* as releases/latest's: the checksum file must name the file, and agree with GitHub's digest */
+        int found;
+        if (!sums_read || !sums)
+            reason = GITHUB_RELEASE_SUMS_UNREADABLE;
+        else if ((found = github_release_sums(sums, sums_length, asset->name, line)) == 0)
+            reason = GITHUB_RELEASE_SUMS_NO_LINE;
+        else if (found < 0)
+            reason = GITHUB_RELEASE_SUMS_MALFORMED;
+        else if (files->digest[0] && strcmp(files->digest, line) != 0)
+            reason = GITHUB_RELEASE_HASHES_DIFFER;
+        else
+        {
+            str_copy(asset->sha256, sizeof(asset->sha256), line);
+            asset->from_sums = 1;
+            reason = GITHUB_RELEASE_NEWER;
+        }
+    }
+    else if (files->digest[0])
+    {
+        str_copy(asset->sha256, sizeof(asset->sha256), files->digest);
+        reason = GITHUB_RELEASE_NEWER;
+    }
+    else
+        reason = GITHUB_RELEASE_NO_HASH;
+    /* Solanum's catalog: its pin of the file must agree too, and checks one with neither */
+    if (app->source == 0)
+        reason = apps_check_pin(app, reason, asset);
+    if (reason != GITHUB_RELEASE_NEWER)
+        asset->sha256[0] = '\0';
+    return reason;
 }
 
 /* ---------------------------------------------------------------- what a release offers */
@@ -517,6 +593,9 @@ Offer apps_decide(const Installed *installed, bool found, const char *tag)
         return found ? OFFER_GET : OFFER_NONE;
     if (!found || installed->image)
         return OFFER_NONE;
+    /* 0.4.0: the very release Solanum put in place is no update, whatever its tag ("v0.2.0-beta.1" names no version) */
+    if (installed->tag[0] && tag && strcmp(installed->tag, tag) == 0)
+        return OFFER_CURRENT;
     if (apps_tag_version(tag, version) == TAG_NONE)
         return OFFER_UPDATE;
     order = update_check_version_compare(version, installed->version, &comparable);
@@ -527,7 +606,8 @@ Offer apps_decide_release(const Installed *installed, bool found, const github_r
 {
     int comparable = 0;
     if (!release || !release->content[0] || !update_check_version_parse(release->content, NULL) ||
-        !installed->folder[0] || installed->image || !found)
+        !installed->folder[0] || installed->image || !found ||
+        (installed->tag[0] && strcmp(installed->tag, release->tag) == 0))
         return apps_decide(installed, found, release ? release->tag : NULL);
     if (!update_check_version_parse(installed->version, NULL))
         return OFFER_UPDATE; /* what is installed can't be told: as apps_decide does with a tag that names none */

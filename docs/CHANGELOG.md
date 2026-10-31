@@ -2,14 +2,14 @@
 
 ## 0.4.0
 
-Every app ProsperoStore's catalog can install, and what Solanum needs to install them all: 159 apps in the catalog,
-up from 56.
+ProsperoStore's catalog's apps, and what Solanum needs to install them all: 154 apps in the catalog, up from 56.
 
-- **103 more apps.** Solanum-Catalog now lists every app of darkxex/ps5-homebrew-catalog that has a public release,
-  except six: PKG Folderizer, Alembic and Prospero Multi Tools (they install or convert game dumps and packages),
-  DOOM Native Port (its release carries the shareware WAD), The Simpsons Game (its release is a PC builder, with no
-  app in it) and Stremio by Sp9nky (only an `.ffpfsc` image, which the catalog can't open to check). The eight title
-  IDs reserved there have no release yet. Every new release was pinned by the catalog's workflow and its ZIP looked
+- **98 more apps.** Solanum-Catalog now lists the apps of darkxex/ps5-homebrew-catalog that have a public release,
+  except six it leaves out by its rules: PKG Folderizer, Alembic and Prospero Multi Tools (they install or convert
+  game dumps and packages), DOOM Native Port (its release carries the shareware WAD), The Simpsons Game (its release
+  is a PC builder, with no app in it) and Stremio by Sp9nky (only an `.ffpfsc` image, which the catalog can't open
+  to check); and five left out by choice: ProsperoStore, ProsperoEden (Mirror), ProsperoTV, ProsperoLight and
+  SwanStationPS5. The eight title IDs reserved there have no release yet. Every new release was pinned by the catalog's workflow and its ZIP looked
   into: one app folder of its title ID, and no game data, ROMs, BIOS or keys. Each one-line summary is the
   catalog's own.
 - **The catalog's new line.** Decompilations, recompilations, engine ports and PC-game launchers that run a game
@@ -18,18 +18,26 @@ up from 56.
   installers, backup loaders, dump converters) and releases with game files stay out.
 - **Apps that publish only pre-releases.** An app whose catalog entry has the `newest` channel is offered its newest
   release with its file, pre-release or not (GitHub's list, one request, as releases/latest is for the others), and
-  its page says **Pre-release**. Versions lists its pre-releases too. 21 apps use it, among them SuperTuxKart,
+  its page says **Pre-release**. Versions lists its pre-releases too. 20 apps use it, among them SuperTuxKart,
   Source Port, SudokuZen, Mortalfin and the pre-release-only ports; James Pond 2 and Codex PS5 use it to skip the
-  releases they publish for other platforms.
-- **Two apps of one title ID.** ProsperoTV, ProsperoLight, SwanStationPS5 and vkQuake have the title IDs of
-  Physalis, Datura, Mandrake and Dulcamara, which grew from three of them. A console holds one app of a title ID, so
-  Solanum tells which is installed by the name in its `param.json` (the catalog's workflow records each release's),
-  shows the other as not installed with **Installing it replaces ...** on its page, and asks before installing it in
-  place of the one there. The kept versions, holds and skips of the app it replaces are let go, so Roll back never
-  puts the other app back. An older Solanum leaves the second app of a title ID out of its lists.
+  releases they publish for other platforms. Its release, and every release Versions lists, is checked as
+  releases/latest's is: the release's checksum file must name the file and agree with GitHub's digest and the pin.
+- **Two apps of one title ID.** vkQuake has Dulcamara's title ID. A console holds one app of a title ID, so Solanum
+  tells which is installed by the name in its `param.json` (the catalog's workflow records each release's): the only
+  app whose pinned release has that name, or else whose own name it is. A name no app has, none, or one two apps
+  have is no app's: Solanum can't tell, so neither app is updated, rolled back or uninstalled, and the page says so.
+  The app that isn't there shows as not installed, with **Installing it replaces ...**; Install, and Versions too,
+  ask before putting it in place of the one there, and never over an app mounted from an image. A ZIP kept for Roll
+  back is offered only to the app whose repository it came from, so Roll back never puts the other app back, even
+  after it was swapped outside Solanum; holds and skips are each app's own. An older Solanum leaves the second app of
+  a title ID out of its lists.
+- **No endless updates.** Solanum remembers the release it put in place (`apps.ini`), so a release whose tag names no
+  version (`v0.2.0-beta.1`) isn't offered, or installed by itself, again once it is installed.
+- **Downloads** names each job's own app, not the first app of its title ID.
 - About and the Browse hint say what the catalog lists now, in all ten languages. `tests/store_check.c` checks the
-  new fields, which app a shared title ID's folder is, pre-releases read from GitHub's list, and that the whole
-  159-app catalog is read with nothing left out.
+  new fields, which app a shared title ID's folder is (and that a name it can't place is no app's), that no install
+  replaces another app unasked, Roll back after an outside switch, the checks of GitHub's list, and that the whole
+  catalog is read with nothing left out.
 
 ## 0.3.0
 

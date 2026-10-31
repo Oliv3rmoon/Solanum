@@ -388,13 +388,14 @@ static void carry_out(void)
     switch (request)
     {
     case REQUEST_INSTALL:
-        if (!store_install(index, app.request_text, reason, sizeof(reason)))
+        if (!store_install(index, app.request_text, app.request_arg == 1, reason, sizeof(reason)))
             app_message_box(tr(reason));
         else
             app_next_tip();
         break;
     case REQUEST_VERSION:
-        if (!store_install_version(index, app.request_arg, reason, sizeof(reason)))
+        if (!store_install_version(index, app.request_arg, strcmp(app.request_text, "replace") == 0, reason,
+                                   sizeof(reason)))
             app_message_box(tr(reason));
         break;
     case REQUEST_ROLLBACK:
@@ -415,7 +416,7 @@ static void carry_out(void)
                 list[n++] = i;
         store_unlock();
         for (int i = 0; i < n; ++i)
-            queued += store_install(list[i], "", reason, sizeof(reason));
+            queued += store_install(list[i], "", false, reason, sizeof(reason));
         snprintf(text, sizeof(text), queued == 1 ? tr("1 update is in the queue.") : tr("%d updates are in the queue."),
                  queued);
         app_toast(text);
@@ -563,7 +564,7 @@ static void auto_update(void)
     done_for = generation;
     int queued = 0;
     for (int i = 0; i < n; ++i)
-        queued += store_install(list[i], "", reason, sizeof(reason));
+        queued += store_install(list[i], "", false, reason, sizeof(reason));
     if (queued)
     {
         char text[160];

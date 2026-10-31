@@ -65,11 +65,14 @@ It is Nightshade's Settings > Apps, for every app of the catalog:
    in `/data`).
 6. Open sends `app-launch.elf` to the payload loader; Solanum closes, and the payload opens the app.
 
-Two apps of the catalog can have one title ID: a fork that kept its original's (Physalis and ProsperoTV, for one). A
-console holds one of them. Solanum tells which is installed by the name in its `param.json` (the name the catalog's
-workflow read in each app's release), shows the other as not installed, with a note on its page, and installs it
-only after asking: in place of the one there, in its folder, where it keeps the saved data. The kept versions and the
-holds and skips of the one it replaces are let go, so Roll back never puts the other app back.
+Two apps of the catalog can have one title ID: a fork that kept its original's (vkQuake and Dulcamara, for one). A
+console holds one of them. Solanum tells which is installed by the name in its `param.json`: the only app whose pinned
+release has that name (the catalog's workflow reads it in each release), or else whose own name it is. When no app
+has the name, two do, or the folder has none, Solanum can't tell, and leaves the app there alone: no update, Roll
+back or uninstall. The app that isn't there shows as not installed, with a note on its page, and installs only after
+asking (Install and Versions alike): in place of the one there, in its folder, where the saved data stays, and never
+over an app mounted from an image. A ZIP kept for Roll back is offered only to the app whose repository it came from,
+and each app has its own hold and skip, so Roll back never puts the other app back.
 
 Each download is kept in `/data/solanum/cache/` while it arrives, so a cut-off one goes on with an HTTP range
 next time; a copy that doesn't match its checksum is deleted, never resumed. Your decisions (holds, skipped

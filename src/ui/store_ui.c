@@ -785,10 +785,12 @@ static void downloads(uint32_t pressed)
     for (int i = 0; i < app.history_count && n < STORE_JOBS + APP_HISTORY; ++i)
     {
         list[n] = app.history[i];
-        /* the app by its title in the catalog as it is now: a refresh may have moved it */
+        /* the app by its title (and id: a title ID can be two apps') in the catalog as it is now: a refresh may have
+         * moved it */
         list[n].app = -1;
-        for (int a = 0; a < store_catalog()->app_count; ++a)
-            if (strcmp(store_catalog()->apps[a].title_id, list[n].title) == 0)
+        for (int a = 0; a < store_catalog()->app_count && list[n].app < 0; ++a)
+            if (strcmp(store_catalog()->apps[a].title_id, list[n].title) == 0 &&
+                (!list[n].app_id[0] || strcmp(store_catalog()->apps[a].id, list[n].app_id) == 0))
                 list[n].app = a;
         ++n;
     }

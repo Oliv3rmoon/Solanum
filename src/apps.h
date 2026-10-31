@@ -30,6 +30,7 @@ typedef struct
     char version[12]; /* its sce_sys/param.json's contentVersion */
     bool image;       /* ShadowMountPlus mounts it from an image: it opens, it isn't updated here */
     char name[64];    /* 0.4.0: its param.json's name (its default language's titleName); empty: none */
+    char tag[40];     /* 0.4.0: the release Solanum put in place, when this is still it (prefs.h); empty: unknown */
 } Installed;
 
 /* titleId and contentVersion of a param.json; false when it can't be read or lacks either. */
@@ -39,11 +40,42 @@ bool apps_read_param(const char *path, char title[10], char version[12]);
 bool apps_param_name(const char *json, size_t length, char *name, size_t size);
 
 /* 0.4.0: which app an installed folder of a shared title ID is. Two apps can have one title ID (catalog_sharing: a
- * fork that kept its original's); a console holds one of them. The installed one is the app whose pinned release
- * names it as its param.json does (pin title_name), else whose name is that name (ignoring case), else the one
- * listed first. Returns the catalog's index of that app; `index` itself when its title ID is its own, or when the
- * folder can't be told (nothing installed). */
+ * fork that kept its original's); a console holds one of them. The installed one is the only app of them whose pinned
+ * releases name it as its param.json does (pin title_name); else, when no pin names it, the only one whose own name
+ * is that name (both ignoring case and the spaces around). Returns the catalog's index of that app; `index` itself
+ * when its title ID is its own, or nothing is installed; APPS_OWNER_UNKNOWN when it can't be told: the folder has no
+ * name, a name no app of them has, or one two of them have. Whichever app of the group is asked about, the answer is
+ * the same. */
+#define APPS_OWNER_UNKNOWN (-2)
 int apps_owner(const Catalog *catalog, int index, const Installed *installed);
+
+/* 0.4.0: what an install of an app goes over. Its own installed folder (an update, an older version), or nothing (a
+ * new app); or, when it isn't installed and another app of its title ID is (occupant: that app's catalog index or
+ * APPS_OWNER_UNKNOWN; occupied: its folder), that app's folder, but only when the player said yes to replacing it
+ * (`replace`), and never when it is mounted from an image. Every install asks it (Install, Update, Versions), so none
+ * replaces another app unasked. INSTALL_OVER_OK sets *over (and *switching: it replaces another app). */
+typedef enum
+{
+    INSTALL_OVER_OK,
+    INSTALL_OVER_ASK,   /* another app of its title ID is there, and the player hasn't said to replace it */
+    INSTALL_OVER_IMAGE  /* another app of its title ID is there, mounted from an image: it can't be replaced */
+} InstallOver;
+InstallOver apps_install_over(const Installed *installed, int occupant, const Installed *occupied, bool replace,
+                              const Installed **over, bool *switching);
+
+/* 0.4.0: whether a download's address is a release file of the app's own repository
+ * (https://github.com/<repo>/releases/download/...): a ZIP Solanum kept for a title ID is offered for Roll back only to
+ * the app it came from, never to another app of that title ID. */
+bool apps_url_of_repo(const char *url, const char *repo);
+
+/* 0.4.0: one release of GitHub's list (github_release_list_read_any: `asset` with GitHub's digest in files->digest)
+ * made checkable as releases/latest's is (github_release_asset_check): when the release has a checksum file
+ * (files->sums_files), its text (`sums`, `sums_read` false when it couldn't be read) must have a line for the file,
+ * and that line must be GitHub's digest when there is one; with no checksum file, the digest is the SHA-256. Then, for
+ * Solanum's own catalog, the catalog's pin of that file must agree (apps_check_pin), and gives the SHA-256 when there
+ * is no other. GITHUB_RELEASE_NEWER: asset->sha256 is set; otherwise why not, and asset->sha256 is empty. */
+int apps_release_listed(const CatalogApp *app, github_release_asset *asset, const github_release_files *files,
+                        const char *sums, size_t sums_length, bool sums_read);
 /* Solanum's own folder as it lies on its drive (not the PS5's mount of it, /app0): where ShadowMountPlus
  * recorded it mounted it from (<registered>/app/<title>/mount.lnk), else install_dir when the app is there.
  * Empty when neither. */
@@ -84,7 +116,7 @@ TagKind apps_tag_version(const char *tag, char version[12]);
 
 /* What there is to do: nothing (no release found, or an image), get it, update it, or nothing newer
  * (current). A release whose tag names no version is offered to an installed app all the same: whether it
- * is newer can't be told. */
+ * is newer can't be told, unless it is the very release Solanum put in place (0.4.0: installed->tag). */
 typedef enum
 {
     OFFER_NONE,

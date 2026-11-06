@@ -15,10 +15,14 @@
  *     conversation;
  *   - the Konami code, and a random tip or egg;
  *   - 0.4.0's catalog line: No license, needs_game_files, the "newest" channel (pre-releases read from GitHub's list),
- *     and two apps of one title ID (`shares`), told apart by the installed param.json's name.
+ *     and two apps of one title ID (`shares`), told apart by the installed param.json's name;
+ *   - 0.5.0's icons: the catalog's icon (one listed badly left out, never a custom catalog's), a download that isn't
+ *     the icon refused and never kept, a kept copy that changed deleted and fetched again, a kept one read without the
+ *     network, the cache pruned to the catalog's icons, the textures kept in memory, and the picture a tile draws.
  */
 #define _DEFAULT_SOURCE 1 /* glibc: lstat, strdup, usleep under -std=c11 */
 #include "../src/apps.h"
+#include "../src/appicon.h"
 #include "../src/catalog.h"
 #include "../src/custom.h"
 #include "../src/keep.h"
@@ -1687,6 +1691,243 @@ static void check_review_fixes(void)
     EXPECT(apps_decide_release(&fresh, true, &pre) == OFFER_UPDATE, "the next one is offered");
 }
 
+/* ---------------------------------------------------------------- 0.5.0: the apps' icons */
+
+static int icon_fetches;
+static const unsigned char *icon_answer;
+static size_t icon_answer_length;
+static int icon_status;
+static char icon_url_asked[300];
+
+static int fake_icon_fetch(void *user, const char *url, char *body, size_t capacity, size_t *length, int *status)
+{
+    (void)user;
+    ++icon_fetches;
+    snprintf(icon_url_asked, sizeof(icon_url_asked), "%s", url);
+    *length = 0;
+    *status = icon_status;
+    if (icon_status != 200)
+        return 0;
+    if (icon_answer_length > capacity)
+        return SELF_UPDATE_FETCH_TOO_LARGE;
+    memcpy(body, icon_answer, icon_answer_length);
+    *length = icon_answer_length;
+    return 0;
+}
+
+static void check_icons(void)
+{
+    /* the catalog: an icon is read; one listed badly is left out with a log line, and its app kept */
+    static Catalog listed, custom;
+    static const char json[] =
+        "{\"schema\":1,\"apps\":["
+        APP("plain", "PPSA10001", "") ","
+        APP("logo", "PPSA10002", ",\"icon\":{\"path\":\"icons/logo.png\",\"sha256\":\"" HEX64 "\",\"size\":16357}") ","
+        APP("escape", "PPSA10003", ",\"icon\":{\"path\":\"icons/../catalog.json\",\"sha256\":\"" HEX64 "\",\"size\":9}") ","
+        APP("away", "PPSA10004", ",\"icon\":{\"path\":\"https://example.com/x.png\",\"sha256\":\"" HEX64 "\","
+                                  "\"size\":9}") ","
+        APP("heavy", "PPSA10005", ",\"icon\":{\"path\":\"icons/heavy.png\",\"sha256\":\"" HEX64 "\",\"size\":131072}") ","
+        APP("upper", "PPSA10006", ",\"icon\":{\"path\":\"icons/upper.png\",\"sha256\":\"0123456789ABCDEF0123456789abcdef"
+                                  "0123456789abcdef0123456789abcdef\",\"size\":9}") ","
+        APP("text", "PPSA10007", ",\"icon\":\"icons/text.png\"") ","
+        APP("later", "PPSA10008", ",\"icon\":{\"path\":\"icons/later.png\",\"sha256\":\"" HEX64 "\",\"size\":9,"
+                                  "\"width\":256}")
+        "]}";
+    log_count = 0;
+    EXPECT(catalog_parse(json, sizeof(json) - 1, &listed, collect, NULL) == 8, "every app kept, whatever its icon");
+    EXPECT(!listed.apps[0].icon.path[0], "an app without an icon has none");
+    EXPECT(strcmp(listed.apps[1].icon.path, "icons/logo.png") == 0 && strcmp(listed.apps[1].icon.sha256, HEX64) == 0 &&
+               listed.apps[1].icon.size == 16357,
+           "an icon's path, SHA-256 and size");
+    EXPECT(!listed.apps[2].icon.path[0] && !listed.apps[3].icon.path[0] && !listed.apps[4].icon.path[0] &&
+               !listed.apps[5].icon.path[0] && !listed.apps[6].icon.path[0],
+           "an icon outside icons/, elsewhere, of 128 KiB, with an uppercase SHA-256, or not an object: left out");
+    EXPECT(logged("app 2 (escape): its icon is not") && logged("app 3 (away): its icon is not") &&
+               logged("app 4 (heavy): its icon is not") && logged("app 5 (upper): its icon is not") &&
+               logged("app 6 (text): its icon is not"),
+           "each with a line in the log");
+    EXPECT(strcmp(listed.apps[7].icon.path, "icons/later.png") == 0, "a member Solanum doesn't know is skipped");
+    EXPECT(catalog_icon_path_valid("icons/nightshade.png") && catalog_icon_path_valid("icons/a1.b-c_d.png") &&
+               !catalog_icon_path_valid("icons/.png") && !catalog_icon_path_valid("icons/-a.png") &&
+               !catalog_icon_path_valid("icons/sub/a.png") && !catalog_icon_path_valid("icons/A.png") &&
+               !catalog_icon_path_valid("icon/a.png") && !catalog_icon_path_valid("icons/a.jpg"),
+           "an icon's path: icons/<lowercase name>.png");
+    static const char third[] =
+        "{\"schema\":1,\"apps\":["
+        APP("theirs", "PPSA10009", ",\"icon\":{\"path\":\"icons/theirs.png\",\"sha256\":\"" HEX64 "\",\"size\":9}")
+        "]}";
+    EXPECT(catalog_parse(third, sizeof(third) - 1, &custom, NULL, NULL) == 1 && custom.apps[0].icon.path[0] &&
+               catalog_merge(&listed, &custom, 1, NULL) == 1 && !listed.apps[8].icon.path[0],
+           "a custom catalog's app gets no icon: icons come from Solanum's catalog's repository alone");
+
+    /* an icon: a PNG's signature and some bytes */
+    static unsigned char png[3000], body[CATALOG_ICON_BYTES];
+    memcpy(png, "\x89PNG\r\n\x1a\n", 8);
+    for (size_t i = 8; i < sizeof(png); ++i)
+        png[i] = (unsigned char)(i * 7 + 3);
+    CatalogIcon icon;
+    memset(&icon, 0, sizeof(icon));
+    snprintf(icon.path, sizeof(icon.path), "icons/logo.png");
+    sha256_hex(png, sizeof(png), icon.sha256);
+    icon.size = sizeof(png);
+    char cache[600], url[300], path[800], why[300];
+    size_t length = 0;
+    snprintf(cache, sizeof(cache), "%s/icon-cache", scratch);
+    EXPECT(appicon_url(&icon, url, sizeof(url)) &&
+               strcmp(url, "https://raw.githubusercontent.com/Oliv3rmoon/Solanum-Catalog/main/icons/logo.png") == 0,
+           "an icon is fetched from the catalog's repository, beside catalog.json");
+    EXPECT(appicon_path(cache, icon.sha256, path, sizeof(path)) && strstr(path, "/icon-cache/icons/") &&
+               strstr(path, icon.sha256) && !appicon_path(cache, "not a hash", path + 700, 100),
+           "and kept under its SHA-256");
+    static unsigned char changed[sizeof(png)];
+    memcpy(changed, png, sizeof(png));
+    changed[1500] ^= 0x01;
+    EXPECT(appicon_check(&icon, png, sizeof(png)) && !appicon_check(&icon, changed, sizeof(changed)) &&
+               !appicon_check(&icon, png, sizeof(png) - 1),
+           "the check: one changed byte, or one byte less, isn't the icon");
+    CatalogIcon not_png = icon;
+    changed[1500] ^= 0x01;
+    changed[0] = 'G';
+    sha256_hex(changed, sizeof(changed), not_png.sha256);
+    EXPECT(!appicon_check(&not_png, changed, sizeof(changed)), "nor a file of the right hash that isn't a PNG");
+
+    /* fetched once: checked and kept */
+    icon_fetches = 0;
+    icon_status = 200;
+    icon_answer = png;
+    icon_answer_length = sizeof(png);
+    EXPECT(appicon_load(cache, &icon, fake_icon_fetch, NULL, body, sizeof(body), &length, why, sizeof(why)) ==
+                   APPICON_FETCHED &&
+               icon_fetches == 1 && strcmp(icon_url_asked, url) == 0 && length == sizeof(png) &&
+               memcmp(body, png, length) == 0 && size_of(path) == sizeof(png),
+           "an icon that isn't kept is fetched, checked, and kept");
+    /* the cache: read without the network */
+    icon_fetches = 0;
+    memset(body, 0, sizeof(png));
+    EXPECT(appicon_load(cache, &icon, fake_icon_fetch, NULL, body, sizeof(body), &length, why, sizeof(why)) ==
+                   APPICON_KEPT &&
+               icon_fetches == 0 && length == sizeof(png) && memcmp(body, png, length) == 0,
+           "a kept icon is read from the cache, and the network isn't asked");
+    EXPECT(appicon_load(cache, &icon, NULL, NULL, body, sizeof(body), &length, why, sizeof(why)) == APPICON_KEPT,
+           "the same offline");
+
+    /* a download that isn't the icon is refused, and never kept */
+    CatalogIcon other = icon;
+    snprintf(other.path, sizeof(other.path), "icons/other.png");
+    for (size_t i = 8; i < sizeof(png); ++i)
+        png[i] = (unsigned char)(i * 5 + 1);
+    sha256_hex(png, sizeof(png), other.sha256);
+    char other_path[800];
+    appicon_path(cache, other.sha256, other_path, sizeof(other_path));
+    memcpy(changed, png, sizeof(png));
+    changed[2999] ^= 0x80;
+    icon_answer = changed;
+    icon_fetches = 0;
+    EXPECT(appicon_load(cache, &other, fake_icon_fetch, NULL, body, sizeof(body), &length, why, sizeof(why)) ==
+                   APPICON_NONE &&
+               icon_fetches == 1 && length == 0 && strstr(why, "isn't the icon the catalog names") &&
+               !path_exists(other_path),
+           "a tampered download is refused, and not kept");
+    icon_status = 404;
+    EXPECT(appicon_load(cache, &other, fake_icon_fetch, NULL, body, sizeof(body), &length, why, sizeof(why)) ==
+                   APPICON_NONE && strstr(why, "answered 404"),
+           "a missing icon: its letter stays");
+    icon_status = 200;
+    icon_answer = png;
+    EXPECT(appicon_load(cache, &other, fake_icon_fetch, NULL, body, sizeof(body), &length, why, sizeof(why)) ==
+                   APPICON_FETCHED && size_of(other_path) == sizeof(png),
+           "the right one is kept");
+
+    /* a kept copy that changed: deleted, and fetched again */
+    write_file(other_path, (const char *)changed, sizeof(changed));
+    EXPECT(appicon_read(cache, &other, body, sizeof(body), &length) == -1 && !path_exists(other_path),
+           "a tampered kept icon is refused and deleted");
+    write_file(other_path, (const char *)changed, sizeof(changed));
+    EXPECT(appicon_load(cache, &other, NULL, NULL, body, sizeof(body), &length, why, sizeof(why)) == APPICON_NONE &&
+               !path_exists(other_path),
+           "offline, a tampered kept icon isn't shown");
+    write_file(other_path, (const char *)changed, sizeof(changed));
+    icon_fetches = 0;
+    EXPECT(appicon_load(cache, &other, fake_icon_fetch, NULL, body, sizeof(body), &length, why, sizeof(why)) ==
+                   APPICON_FETCHED &&
+               icon_fetches == 1 && strstr(why, "changed") && memcmp(body, png, sizeof(png)) == 0 &&
+               appicon_read(cache, &other, body, sizeof(body), &length) == 1,
+           "online, it is fetched again and kept in its place");
+
+    /* the cache keeps the catalog's icons alone */
+    char stray[900], unrelated[900];
+    snprintf(stray, sizeof(stray), "%s.new", path);
+    snprintf(unrelated, sizeof(unrelated), "%s/icons/notes.txt", cache);
+    write_file(stray, "x", 1);
+    write_file(unrelated, "x", 1);
+    char keep_list[1][65];
+    snprintf(keep_list[0], sizeof(keep_list[0]), "%s", icon.sha256);
+    EXPECT(appicon_prune(cache, (const char (*)[65])keep_list, 1) == 2 && path_exists(path) &&
+               !path_exists(other_path) && !path_exists(stray) && path_exists(unrelated),
+           "an icon the catalog no longer names, and an unfinished copy, are deleted; nothing else");
+
+    /* the textures in memory: the least recently drawn gives way, never one drawn in the last frame */
+    static AppIconLru lru;
+    static int textures[APPICON_TEXTURES + 2];
+    char sha[65], gone[65];
+    void *evicted = NULL;
+    int all = 1;
+    for (int i = 0; i < APPICON_TEXTURES; ++i)
+    {
+        snprintf(sha, sizeof(sha), "%064d", i);
+        all &= appicon_lru_put(&lru, sha, &textures[i], 10 + (uint64_t)i, &evicted, gone) == 1 && evicted == NULL;
+    }
+    EXPECT(all && lru.count == APPICON_TEXTURES, "the textures fill their places");
+    snprintf(sha, sizeof(sha), "%064d", 0);
+    EXPECT(appicon_lru_get(&lru, sha, 100) == &textures[0], "a kept texture is found, and marked drawn");
+    snprintf(sha, sizeof(sha), "%064d", 1000);
+    EXPECT(appicon_lru_put(&lru, sha, &textures[APPICON_TEXTURES], 101, &evicted, gone) == 1 &&
+               evicted == &textures[1] && strcmp(gone, "0000000000000000000000000000000000000000000000000000000000000001") == 0,
+           "a new one takes the place of the least recently drawn");
+    EXPECT(appicon_lru_get(&lru, gone, 102) == NULL && lru.count == APPICON_TEXTURES, "which is gone");
+    for (int i = 0; i < lru.count; ++i)
+        (void)appicon_lru_get(&lru, lru.slot[i].sha256, 200);
+    snprintf(sha, sizeof(sha), "%064d", 2000);
+    EXPECT(appicon_lru_put(&lru, sha, &textures[APPICON_TEXTURES + 1], 200, &evicted, gone) == 0 &&
+               appicon_lru_put(&lru, sha, &textures[APPICON_TEXTURES + 1], 201, &evicted, gone) == 0 &&
+               appicon_lru_put(&lru, sha, &textures[APPICON_TEXTURES + 1], 202, &evicted, gone) == 1 && evicted != NULL,
+           "every texture drawn in the last frame: none gives way until a frame without them");
+    EXPECT(APPICON_TEXTURES >= 7 && APPICON_BUDGET_BYTES < 4352 * 1024,
+           "the textures kept: a list's six tiles and a page's, at about 4 MiB in all");
+
+    /* the picture a tile draws: fitted, alpha weighted, its corners rounded */
+    static uint8_t picture[256 * 256 * 4], out[APPICON_PIXEL_BYTES];
+    for (int i = 0; i < 200 * 100; ++i)
+        memcpy(&picture[i * 4], "\xd0\x20\x30\xff", 4);
+#define PX(x, y) (&out[((size_t)(y) * APPICON_SIDE + (x)) * 4])
+    EXPECT(appicon_fit(picture, 200, 100, out) && PX(84, 84)[3] == 255 && PX(84, 84)[0] == 0xd0 && PX(84, 0)[3] == 0 &&
+               PX(0, 84)[3] == 255 && PX(84, APPICON_SIDE - 1)[3] == 0,
+           "a wide picture: whole, across the square, centred, clear above and below");
+    EXPECT(!appicon_fit(picture, 257, 16, out) && !appicon_fit(picture, 0, 16, out), "a picture too large is refused");
+    for (int y = 0; y < 256; ++y)
+        for (int x = 0; x < 256; ++x)
+            memcpy(&picture[((size_t)y * 256 + x) * 4], x % 2 ? "\x00\x00\x00\x00" : "\xff\xff\xff\xff", 4);
+    int white = 1;
+    EXPECT(appicon_fit(picture, 256, 256, out), "a square picture of 256");
+    for (int i = 0; i < APPICON_SIDE * APPICON_SIDE; ++i)
+        white &= out[i * 4 + 3] == 0 || (out[i * 4] == 255 && out[i * 4 + 1] == 255 && out[i * 4 + 2] == 255);
+    EXPECT(white && PX(84, 84)[3] > 60 && PX(84, 84)[3] < 196,
+           "shrunk by alpha: half-clear white stays white, never a dark fringe");
+    for (int i = 0; i < 16 * 16; ++i)
+        memcpy(&picture[i * 4], "\x10\x80\x20\xff", 4);
+    EXPECT(appicon_fit(picture, 16, 16, out) && PX(0, 0)[3] == 255 && PX(167, 167)[1] == 0x80,
+           "a small picture is grown to the whole square");
+    appicon_round(out, APPICON_SIDE, APPICON_SIDE * APPICON_RADIUS);
+    int edge = 0;
+    for (int i = 0; i < APPICON_SIDE / 4; ++i)
+        edge |= PX(i, i)[3] > 0 && PX(i, i)[3] < 255;
+    EXPECT(PX(0, 0)[3] == 0 && PX(APPICON_SIDE - 1, 0)[3] == 0 && PX(0, APPICON_SIDE - 1)[3] == 0 &&
+               PX(APPICON_SIDE - 1, APPICON_SIDE - 1)[3] == 0 && PX(84, 0)[3] == 255 && PX(0, 84)[3] == 255 &&
+               PX(84, 84)[3] == 255 && edge,
+           "its corners rounded as the tile's (clear outside, smooth on the edge), its edges and middle untouched");
+#undef PX
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3)
@@ -1715,6 +1956,7 @@ int main(int argc, char **argv)
     check_roots();
     check_new_line();
     check_review_fixes();
+    check_icons();
     printf("%s store: %d checks, %d failed\n", failed ? "FAIL" : "PASS", passed + failed, failed);
     return failed ? 1 : 0;
 }

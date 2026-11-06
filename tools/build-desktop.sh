@@ -8,6 +8,7 @@
 #
 # Run it with NP_ROOT=<a data folder> (default ./solanum-data), NP_ASSETS=<repo>/assets and
 # NP_FIXTURES=<repo>/tests/fixtures. A made-up console's apps go in <NP_ROOT>/console/data/homebrew.
+# NP_FIXTURES may also be a checkout of Solanum-Catalog (any branch): its catalog.json, and its icons/ for the tiles.
 
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)

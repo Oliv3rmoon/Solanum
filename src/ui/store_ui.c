@@ -20,6 +20,7 @@
 #include "sfx.h"
 #include "text.h"
 #include "theme.h"
+#include "tile_icons.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -40,9 +41,19 @@ enum
 static const int CATEGORY_ICONS[CATEGORY_COUNT] = {ICON_DEVICE_GAMEPAD_2, ICON_DEVICE_TV, ICON_WIFI,
                                                    ICON_PLAYER_PLAY,      ICON_SETTINGS,  ICON_CATEGORY};
 
-/* An app's tile: its initial on Nightshade's red, the category's sign in a corner. */
+/* An app's tile: its icon from the catalog (0.5.0), rounded as the tile is; without one (none, on its way, or failed)
+ * its initial on Nightshade's red, the category's sign in a corner. The sign isn't drawn over an icon: a logo is
+ * busy enough, and the list says the category. */
 void app_draw_tile(const CatalogApp *a, float x, float y, float size, float alpha)
 {
+    PlatTexture *icon = tile_icons_texture(a);
+    if (icon)
+    {
+        draw_rrect(x, y, size, size, size * 0.2f, argb_alpha(0xff1a0a0du, alpha)); /* behind a clear icon */
+        plat_draw_texture(icon, x, y, size, size, argb_alpha(0xffffffffu, alpha), true);
+        draw_rrect_outline(x, y, size, size, size * 0.2f, 2, argb_alpha(0x80e5484du, alpha));
+        return;
+    }
     const uint32_t colors[2] = {argb_alpha(0xff5a1419u, alpha), argb_alpha(0xff1a0a0du, alpha)};
     const float stops[2] = {0.0f, 1.0f};
     draw_rrect(x, y, size, size, size * 0.2f, argb_alpha(0xff2a0d10u, alpha));

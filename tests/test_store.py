@@ -56,10 +56,10 @@ class StoreTest(unittest.TestCase):
             executable = Path(directory) / "store-check"
             sources = [ROOT / "tests/store_check.c", ROOT / "src/catalog.c", ROOT / "src/apps.c",
                        ROOT / "src/resume.c", ROOT / "src/util.c", ROOT / "src/prefs.c", ROOT / "src/keep.c",
-                       ROOT / "src/custom.c", *[ROOT / "kit" / name for name in KIT]]
+                       ROOT / "src/custom.c", ROOT / "src/appicon.c", *[ROOT / "kit" / name for name in KIT]]
             subprocess.run([cc, "-std=c11", "-O1", *SANITIZE, "-Wall", "-Wextra", "-Wpedantic", "-Werror",
                             "-UNDEBUG", "-DUPDATE_CHECK_NO_NETWORK=1", "-I" + str(ROOT / "kit"),
-                            "-I" + str(ROOT / "src"), *map(str, sources), "-pthread", "-o", str(executable)],
+                            "-I" + str(ROOT / "src"), *map(str, sources), "-pthread", "-lm", "-o", str(executable)],
                            check=True)
             scratch = Path(directory) / "scratch"
             scratch.mkdir()
@@ -110,9 +110,11 @@ class StoreTest(unittest.TestCase):
         allowed = ("https://raw.githubusercontent.com/Oliv3rmoon/Solanum-Catalog/", "https://api.github.com/",
                    "https://github.com/")
         custom = allowed + ("https://raw.githubusercontent.com/",)
+        # 0.5.0: the apps' icons come from Solanum's catalog's repository, beside catalog.json.
+        self.assertIn('"https://raw.githubusercontent.com/Oliv3rmoon/Solanum-Catalog/main/"', catalog)
         for name in ("store.c", "store_console.c", "catalog.h", "catalog.c", "apps.c", "resume.c", "custom.c",
-                     "keep.c", "prefs.c", "ui/store_ui.c", "ui/page.c", "ui/keyboard.c", "ui/settings.c",
-                     "ui/overlay.c", "platform/keys.c", "main.c"):
+                     "keep.c", "prefs.c", "appicon.c", "ui/store_ui.c", "ui/page.c", "ui/keyboard.c", "ui/settings.c",
+                     "ui/overlay.c", "ui/tile_icons.c", "platform/keys.c", "main.c"):
             text = (ROOT / "src" / name).read_text(encoding="utf-8")
             for url in re.findall(r'"(https?://[^"]*)', text):
                 if name == "custom.c" and url == "https://":

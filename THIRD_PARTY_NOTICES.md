@@ -191,7 +191,11 @@ The BlackBear icon, selection artwork, and default selection track
 (C) 2026 BlackBearReloaded, and distributed under GPL-3.0-or-later. The track
 is titled `Night Drive`.
 
-Solanum's icon and home-screen pictures (`sce_sys/icon0.png`, `pic0.dds` and `pic1.dds`
+Solanum's icon is its own logo, made for this project (`assets/branding/solanum-logo-1024.png`,
+and `sce_sys/icon0.png` resized from it), Copyright (C) 2026 Oliv3rmoon, distributed under
+GPL-3.0-or-later.
+
+Solanum's home-screen pictures (`pic0.dds` and `pic1.dds`
 with their source PNGs, `background-source.png` and `launch-background-source.png`) are drawn by
 `tools/render-home-art.py`, after Dulcamara's, Mandrake's and Nightshade's (Oliv3rmoon/Nightshade), Copyright
 (C) 2026 Oliv3rmoon, and distributed under GPL-3.0-or-later. The name in them is set in Inter (SIL Open Font

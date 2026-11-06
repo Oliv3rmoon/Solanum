@@ -12,9 +12,8 @@ shelf of app tiles in place of Dulcamara's RPG window: the same nightshade flowe
 cone), black berries and dark leaves, on near black with a red glow and faint stars, in Nightshade's palette (its
 "nightly" theme). The name is set in Inter (assets/fonts, SIL Open Font License).
 
-Writes, in sce_sys/:
-  icon0.png                     512x512: a window holding a row of app tiles, the middle one lit with a
-                                download arrow, the nightshade blooming over it
+Writes, in sce_sys/ (icon0.png is no longer drawn here: it is Solanum's logo, resized from
+assets/branding/solanum-logo-1024.png; --preview still draws the old one):
   background-source.png         3840x2160 (pic0, on the home screen): a window at the right with the name in
                                 it and a shelf of app tiles under the name, the nightshade climbing to flower
                                 over its corner
@@ -501,7 +500,7 @@ def main():
         to_image(background(960, 540)).save(out / 'background.png')
         to_image(launch(960, 540)).save(out / 'launch.png')
         return
-    pictures = {'icon0.png': to_image(icon())}
+    pictures = {}  # icon0.png is the logo (assets/branding/solanum-logo-1024.png), not drawn here
     for source, name, draw in (('background-source.png', 'pic0.dds', background),
                                ('launch-background-source.png', 'pic1.dds', launch)):
         picture = to_image(draw(), 'RGB')

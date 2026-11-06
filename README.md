@@ -54,6 +54,12 @@ ProsperoStore is another PS5 homebrew store. Here is where they differ. A dash m
 | Background music | Your own WAV, MP3 or OGG files | Its own song, or your own `background.mp3` |
 | Title ID | `PPSA76526` | `PPSA99000` |
 
+## nightly insider
+
+**nightly insider** is early access to the Nightshade family's new builds for members of nightly on Discord. For now it covers Nightshade and Dulcamara: Nightshade builds after v1.010.012 and Dulcamara builds after 0.2.12 go to insiders first and are published on GitHub for everyone about two months later. Solanum's releases come out here as before.
+
+To become one, join [nightly on Discord](https://discord.gg/pSqgRU3YP9), verify, run `/rank Tester` in #bot-commands, then sign in with Discord at [nightly-insider.nightly-ps5.workers.dev](https://nightly-insider.nightly-ps5.workers.dev) to get your code.
+
 ## Install
 
 1. Download `PPSA76526.zip` from the [latest release](https://github.com/Oliv3rmoon/Solanum/releases/latest) and unzip it.

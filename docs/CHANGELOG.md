@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-05)
+
+The apps' own icons in the store, and a new icon for Solanum. A test release: a pre-release, which Solanum's own update
+check doesn't offer.
 
 - **The apps' icons.** An app the catalog gives an icon (its `icon`: a PNG in Solanum-Catalog's `icons/`, with its
   SHA-256 and size) shows it on its tile in every list and on its page, with the tile's rounded corners; the six
@@ -10,6 +13,7 @@
   and fetched again. At most 16 icon textures stay in memory (168x168, about 4 MB with their pixels and mips): the
   least recently drawn gives way. An app without an icon, one on its way, or one that failed keeps its letter tile; a
   custom catalog's apps keep theirs. Solanum 0.4.0 and earlier ignore the catalog's new field.
+- **A new icon.** Solanum's home-screen icon is a nightshade flower whose cone is a download arrow into a tray.
 
 ## 0.4.0
 

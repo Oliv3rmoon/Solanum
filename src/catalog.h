@@ -14,6 +14,10 @@
  * the title ID of one listed before it), and each pin's title_name and prerelease. A text that isn't a catalog this version reads (not one JSON
  * object, a schema other than 1, no apps array) is refused whole.
  *
+ * 0.5.0 reads an app's icon: {"path": "icons/<name>.png", "sha256", "size"}, a PNG in the catalog's own repository
+ * (appicon.h fetches, checks and keeps it). An icon the catalog lists badly is left out with a log line, and the app
+ * keeps its letter tile. Versions before 0.5.0 skip the member, as they skip any they don't know.
+ *
  * Plain C11 with no console calls, so the host test builds it alone (tests/store_check.c).
  */
 #ifndef SOLANUM_CATALOG_H
@@ -33,6 +37,11 @@
 #define CATALOG_TAG 24
 #define CATALOG_MAX_PINS 6  /* the newest release the catalog pinned, and the ones before it */
 #define CATALOG_NOTES 3072  /* the newest pinned release's notes, Markdown as GitHub has them (cut by the workflow) */
+/* 0.5.0: an app's icon is a file of Solanum's catalog's repository, fetched from the branch catalog.json is fetched
+ * from; its SHA-256 and size in the catalog are what make it the one the catalog names. */
+#define CATALOG_ICON_BASE "https://raw.githubusercontent.com/Oliv3rmoon/Solanum-Catalog/main/"
+#define CATALOG_ICON_BYTES (128u * 1024u) /* an icon is smaller than this */
+#define CATALOG_ICON_SIDE 256             /* and at most this many pixels wide and high */
 
 /* The catalog's categories, in the order Browse lists them (after the Nightshade family). */
 enum Category
@@ -59,6 +68,14 @@ typedef struct
     char title_name[64]; /* 0.4.0: the name in its param.json, as the workflow read it; empty: not known */
     bool prerelease;   /* 0.4.0: GitHub calls the release a pre-release */
 } CatalogPin;
+
+/* 0.5.0: an app's icon in the catalog's repository. path empty: none. */
+typedef struct
+{
+    char path[96];   /* "icons/<name>.png": lowercase letters, digits, '.', '_' and '-' */
+    char sha256[65]; /* lowercase */
+    uint32_t size;   /* bytes, under CATALOG_ICON_BYTES */
+} CatalogIcon;
 
 /* The license an app's repository states when it states none: Solanum shows "No license". */
 #define CATALOG_NO_LICENSE "none stated"
@@ -92,6 +109,8 @@ typedef struct
     bool needs_game_files; /* a port or launcher that runs the files of a game the player owns; it ships none */
     bool newest;        /* channel "newest": its release is the newest one with its file, pre-releases included */
     char shares[32];    /* the id of the app listed before it whose title ID it has too; empty: none */
+    /* 0.5.0 */
+    CatalogIcon icon;   /* its icon; Solanum's own catalog's apps only (a custom catalog's are left out) */
 } CatalogApp;
 
 typedef struct
@@ -116,7 +135,8 @@ int catalog_parse(const char *json, size_t length, Catalog *out, catalog_log_fn 
 
 /* A custom catalog's apps after Solanum's (catalog_parse of its text into `custom`): each one whose id and title ID
  * are new is added with `source`, never as one of the Nightshade family, never attested, never with a data folder
- * to remove, and without pins: its downloads are checked against what GitHub says, never what that catalog says.
+ * to remove, without pins (its downloads are checked against what GitHub says, never what that catalog says), and
+ * without an icon (icons come from Solanum's catalog's repository alone).
  * Returns how many were added; *hidden how many were left out because another catalog lists them. */
 int catalog_merge(Catalog *into, const Catalog *custom, int source, int *hidden);
 
@@ -139,6 +159,10 @@ int catalog_has_tag(const CatalogApp *app, const char *tag);
 int catalog_category(const char *text);
 /* What Browse calls a category: "Emulators", "Media"... */
 const char *catalog_category_title(int category);
+
+/* 0.5.0: 1 when `path` may be an icon's: "icons/<name>.png", the name lowercase letters, digits, '.', '_' and '-',
+ * starting with a letter or digit, never "..", shorter than CatalogIcon's path. */
+int catalog_icon_path_valid(const char *path);
 
 /* 1 when text is a title ID as the catalog asks for it: four capital letters and five digits. */
 int catalog_title_id_valid(const char *text);

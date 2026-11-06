@@ -17,7 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The fixture a URL stands for: the catalog, a repository's releases/latest, a release's file. */
+/* The fixture a URL stands for: the catalog, an icon of its (0.5.0: <folder>/icons/<name>.png, so a checkout of the
+ * catalog's repository is a folder of fixtures too), a repository's releases/latest, a release's file. */
 static bool fixture(const char *url, char *out, size_t size)
 {
     const char *folder = SDL_getenv("NP_FIXTURES");
@@ -28,6 +29,12 @@ static bool fixture(const char *url, char *out, size_t size)
     if (strcmp(url, CATALOG_URL) == 0)
     {
         snprintf(out, size, "%s/catalog.json", folder);
+        return true;
+    }
+    if (strncmp(url, CATALOG_ICON_BASE, strlen(CATALOG_ICON_BASE)) == 0 &&
+        catalog_icon_path_valid(url + strlen(CATALOG_ICON_BASE)))
+    {
+        snprintf(out, size, "%s/%s", folder, url + strlen(CATALOG_ICON_BASE));
         return true;
     }
     if (strncmp(url, api, strlen(api)) == 0)

@@ -235,6 +235,41 @@ static int read_pin(const char *json, size_t length, const CatalogApp *app, Cata
            strcmp(expected, pin->asset) == 0;
 }
 
+int catalog_icon_path_valid(const char *path)
+{
+    static const char folder[] = "icons/";
+    size_t length;
+    if (path == NULL || strncmp(path, folder, sizeof(folder) - 1) != 0)
+        return 0;
+    length = strlen(path);
+    if (length >= sizeof(((CatalogIcon *)0)->path) || length < sizeof(folder) - 1 + 5 ||
+        strcmp(path + length - 4, ".png") != 0 || strstr(path, "..") != NULL)
+        return 0;
+    for (const char *c = path + sizeof(folder) - 1; *c; ++c)
+        if (!((*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9') ||
+              (c > path + sizeof(folder) - 1 && (*c == '.' || *c == '_' || *c == '-'))))
+            return 0;
+    return 1;
+}
+
+/* 0.5.0: an icon ({"path", "sha256", "size"}): 1 when it is one Solanum can fetch and check. */
+static int read_icon(const char *json, size_t length, CatalogIcon *icon)
+{
+    uint64_t size = 0;
+    memset(icon, 0, sizeof(*icon));
+    if (length == 0 || json[0] != '{' ||
+        update_check_json_string(json, length, "path", icon->path, sizeof(icon->path)) != 1 ||
+        update_check_json_string(json, length, "sha256", icon->sha256, sizeof(icon->sha256)) != 1 ||
+        !read_u64(json, length, "size", &size) || !catalog_icon_path_valid(icon->path) || !is_hex64(icon->sha256) ||
+        size == 0 || size >= CATALOG_ICON_BYTES)
+    {
+        memset(icon, 0, sizeof(*icon));
+        return 0;
+    }
+    icon->size = (uint32_t)size;
+    return 1;
+}
+
 /* The members 0.2.0 reads besides the required ones; each is optional, and one the catalog lists badly is left out
  * with a log line while the app is kept. */
 static void read_extras(const char *json, size_t length, int index, const char *label, CatalogApp *app,
@@ -318,6 +353,15 @@ static void read_extras(const char *json, size_t length, int index, const char *
     }
     else if (found != 0)
         say(log, user, "catalog: app %d (%s): tags is not a list; left out", index, label);
+    /* 0.5.0: its icon */
+    if ((found = update_check_json_value(json, length, "icon", &value, &value_length)) == 1)
+    {
+        if (!read_icon(value, value_length, &app->icon))
+            say(log, user, "catalog: app %d (%s): its icon is not {path icons/<name>.png, sha256, size under %u}; "
+                "left out", index, label, CATALOG_ICON_BYTES);
+    }
+    else if (found != 0)
+        say(log, user, "catalog: app %d (%s): icon can't be read; left out", index, label);
     /* The release the workflow pinned, then the ones before it. */
     if ((found = update_check_json_value(json, length, "release", &value, &value_length)) == 1)
     {
@@ -631,6 +675,7 @@ int catalog_merge(Catalog *into, const Catalog *custom, int source, int *hidden)
         copy->published[0] = '\0';
         copy->notes[0] = '\0';
         copy->shares[0] = '\0';
+        memset(&copy->icon, 0, sizeof(copy->icon));
         ++added;
     }
     if (hidden)

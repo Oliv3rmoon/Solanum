@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **The apps' icons.** An app the catalog gives an icon (its `icon`: a PNG in Solanum-Catalog's `icons/`, with its
+  SHA-256 and size) shows it on its tile in every list and on its page, with the tile's rounded corners; the six
+  Nightshade apps have theirs. An icon is fetched only when its tile is on the screen, on a thread of its own, from the
+  branch `catalog.json` comes from, and shown only when its size and SHA-256 are the catalog's; it is kept in
+  `cache/icons/<sha256>.png`, so a later start shows it without the network, and a kept copy that changed is deleted
+  and fetched again. At most 16 icon textures stay in memory (168x168, about 4 MB with their pixels and mips): the
+  least recently drawn gives way. An app without an icon, one on its way, or one that failed keeps its letter tile; a
+  custom catalog's apps keep theirs. Solanum 0.4.0 and earlier ignore the catalog's new field.
+
 ## 0.4.0
 
 ProsperoStore's catalog's apps, and what Solanum needs to install them all: 154 apps in the catalog, up from 56.

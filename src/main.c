@@ -27,6 +27,7 @@
 #include "ui/sfx.h"
 #include "ui/text.h"
 #include "ui/theme.h"
+#include "ui/tile_icons.h"
 #include "update.h"
 
 #include <SDL2/SDL.h>
@@ -724,6 +725,7 @@ int main(int argc, char **argv)
     path_join(homebrew, sizeof(homebrew), app.paths.root, "console/data/homebrew");
     store_init(app.paths.root, registered, homebrew);
 #endif
+    tile_icons_init(app.paths.cache); /* 0.5.0: the catalog's icons, fetched for the tiles on the screen */
     store_refresh(true);
     app_next_tip(); /* from the catalog's copy, while the catalog loads */
     if (app.settings.update_check && !app.storage_error[0])
@@ -766,6 +768,7 @@ int main(int argc, char **argv)
         auto_update();
 
         store_lock();
+        tile_icons_poll();
         want_text();
         community_card(now - opened);
         plat_begin_frame(0);
@@ -795,12 +798,14 @@ int main(int argc, char **argv)
     music_stop();
 #if !defined(__PROSPERO__)
     plat_audio_close();
+    tile_icons_shutdown();
     icons_shutdown();
     text_shutdown();
     plat_shutdown();
 #else
     /* The system closes the title: exit()/_exit() raise SIGSYS on the console. LoadExec "exit" ends it normally. */
     extern int sceSystemServiceLoadExec(const char *path, const char **arguments);
+    tile_icons_shutdown();
     icons_shutdown();
     text_shutdown();
     plat_release();
